@@ -40,7 +40,7 @@ go build -o monitor.exe ./cmd/server/
 ./monitor.exe
 ```
 
-Open http://localhost:8484 (default credentials: admin / changeme).
+Open http://localhost:8989 (default credentials: admin / changeme).
 
 On Windows, use `build.bat` which runs sqlc generate, builds, and starts the server.
 
@@ -141,7 +141,7 @@ All configuration via environment variables (or `.env` file):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8484` | HTTP listen port |
+| `PORT` | `8989` | HTTP listen port |
 | `DB_PATH` | `monitor.db` | SQLite database path |
 | `LOG_PATH` | — | Path to Caddy JSON access log (required) |
 | `CADDY_ADMIN_URL` | `http://localhost:2019` | Caddy admin API URL |

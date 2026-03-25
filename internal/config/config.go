@@ -26,7 +26,7 @@ func Load() Config {
 	}
 
 	return Config{
-		Port:          envOr("PORT", "8484"),
+		Port:          envOr("PORT", "8989"),
 		DBPath:        envOr("DB_PATH", "monitor.db"),
 		LogPath:       os.Getenv("LOG_PATH"),
 		CaddyAdminURL: envOr("CADDY_ADMIN_URL", "http://localhost:2019"),

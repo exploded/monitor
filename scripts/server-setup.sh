@@ -67,7 +67,7 @@ echo "[ok] Created $APP_DIR"
 # ---------------------------------------------------------------
 if [ ! -f "$APP_DIR/.env" ]; then
     cat > "$APP_DIR/.env" << 'ENVFILE'
-PORT=8484
+PORT=8989
 DB_PATH=/var/www/monitor/monitor.db
 LOG_PATH=/var/log/caddy/access.log
 CADDY_ADMIN_URL=http://localhost:2019
