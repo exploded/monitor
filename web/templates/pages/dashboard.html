@@ -1,0 +1,58 @@
+{{define "content"}}
+<h1>Dashboard</h1>
+
+<div class="dashboard-grid">
+  {{/* Traffic Overview — polls every 30s */}}
+  <section class="panel panel-wide" id="traffic-overview"
+    hx-get="/partials/traffic" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_traffic_overview" .}}
+  </section>
+
+  {{/* Live Log — SSE stream */}}
+  <section class="panel panel-wide">
+    <h2>Live Log</h2>
+    <div class="table-wrap">
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Host</th>
+            <th>IP</th>
+            <th>Method</th>
+            <th>URI</th>
+            <th>Status</th>
+            <th>User Agent</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="live-log-body" hx-ext="sse" sse-connect="/stream" sse-swap="log" hx-swap="afterbegin">
+          {{range .Extra.Recent}}
+          <tr class="{{statusClass .Status}}{{if eq .IsBot 1}} bot-row{{end}}">
+            <td>{{formatTime .Ts}}</td>
+            <td>{{.Host}}</td>
+            <td>{{.ClientIp}}</td>
+            <td>{{.Method}}</td>
+            <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
+            <td>{{.Status}}</td>
+            <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
+            <td>
+              <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from live log"}' hx-target="#ip-list" hx-swap="innerHTML">Block</button>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{/* Bot Management */}}
+  <section class="panel" id="bot-list">
+    {{template "_bot_list" .}}
+  </section>
+
+  {{/* IP Blocklist */}}
+  <section class="panel" id="ip-list">
+    {{template "_ip_list" .}}
+  </section>
+</div>
+{{end}}

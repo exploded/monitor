@@ -1,0 +1,33 @@
+{{define "_daily_summary"}}
+<h2>Daily Summary <small>(last 30 days)</small></h2>
+{{if .Extra.Daily}}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Total</th>
+        <th>Bots</th>
+        <th>Unique IPs</th>
+        <th>Errors</th>
+        <th>Avg Duration (ms)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Extra.Daily}}
+      <tr>
+        <td>{{.Day}}</td>
+        <td>{{.Total}}</td>
+        <td>{{.Bots.Float64}}</td>
+        <td>{{.UniqueIps}}</td>
+        <td>{{.Errors.Float64}}</td>
+        <td>{{.AvgDurationMs}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No data available.</p>
+{{end}}
+{{end}}

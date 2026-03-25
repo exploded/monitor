@@ -1,0 +1,67 @@
+#!/bin/bash
+# /usr/local/bin/deploy-monitor
+# Runs as root (via sudo) during GitHub Actions deployments.
+#
+# To update this script on the server, include scripts/deploy-monitor in the SCP
+# bundle — it will self-update and re-exec before doing anything else.
+
+set -e
+
+DEPLOY_SRC="${1:-/tmp/monitor-deploy}"
+DEPLOY_DIR=/var/www/monitor
+
+# Self-update: if the bundle contains a newer version of this script, install
+# it and re-exec so the rest of the deployment runs with the updated logic.
+BUNDLE_SCRIPT="$DEPLOY_SRC/scripts/deploy-monitor"
+if [ -f "$BUNDLE_SCRIPT" ] && ! diff -q /usr/local/bin/deploy-monitor "$BUNDLE_SCRIPT" > /dev/null 2>&1; then
+    echo "[deploy] Updating deploy script from bundle..."
+    install -m 755 "$BUNDLE_SCRIPT" /usr/local/bin/deploy-monitor
+    exec /usr/local/bin/deploy-monitor "$@"
+fi
+
+# Read the service owner from the installed unit — no hardcoded username
+SERVICE_USER=$(systemctl show monitor --property=User --value)
+SERVICE_GROUP=$(systemctl show monitor --property=Group --value)
+
+if [ -z "$SERVICE_USER" ]; then
+    echo "[deploy] ERROR: Could not read User from monitor.service"
+    exit 1
+fi
+
+echo "[deploy] Stopping service..."
+systemctl stop monitor || true
+
+echo "[deploy] Installing binary to $DEPLOY_DIR/monitor (owner: $SERVICE_USER:$SERVICE_GROUP)..."
+rm -f "$DEPLOY_DIR/monitor"
+cp "$DEPLOY_SRC/monitor" "$DEPLOY_DIR/monitor"
+chmod +x "$DEPLOY_DIR/monitor"
+
+echo "[deploy] Updating web assets..."
+cp -r "$DEPLOY_SRC/web/" "$DEPLOY_DIR/"
+
+echo "[deploy] Updating database schema..."
+mkdir -p "$DEPLOY_DIR/db"
+cp "$DEPLOY_SRC/db/schema.sql" "$DEPLOY_DIR/db/"
+
+echo "[deploy] Updating deploy script..."
+if [ -f "$DEPLOY_SRC/scripts/deploy-monitor" ]; then
+    install -m 755 "$DEPLOY_SRC/scripts/deploy-monitor" /usr/local/bin/deploy-monitor
+fi
+
+chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DEPLOY_DIR"
+
+echo "[deploy] Starting service..."
+systemctl start monitor
+
+echo "[deploy] Verifying service is active..."
+sleep 2
+if ! systemctl is-active --quiet monitor; then
+    echo "[deploy] ERROR: Service failed to start. Status:"
+    systemctl status monitor --no-pager --lines=30
+    exit 1
+fi
+
+echo "[deploy] Cleaning up..."
+rm -rf "$DEPLOY_SRC"
+
+echo "[deploy] Done — monitor is running."

@@ -1,0 +1,41 @@
+{{define "_search_results"}}
+{{if .Extra.Results}}
+<div class="table-wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Host</th>
+        <th>IP</th>
+        <th>Method</th>
+        <th>URI</th>
+        <th>Status</th>
+        <th>Size</th>
+        <th>User Agent</th>
+        <th>Bot</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Extra.Results}}
+      <tr class="{{statusClass .Status}}{{if eq .IsBot 1}} bot-row{{end}}">
+        <td>{{formatDateTime .Ts}}</td>
+        <td>{{.Host}}</td>
+        <td>{{.ClientIp}}</td>
+        <td>{{.Method}}</td>
+        <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
+        <td>{{.Status}}</td>
+        <td>{{humanSize .Size}}</td>
+        <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
+        <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{if .Extra.HasMore}}
+<button class="btn btn-secondary" hx-get="/search?{{.Extra.Query}}&page={{.Extra.NextPage}}" hx-target="#search-results" hx-swap="innerHTML">Load More</button>
+{{end}}
+{{else}}
+<p class="muted">No results found.</p>
+{{end}}
+{{end}}

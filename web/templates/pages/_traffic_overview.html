@@ -1,0 +1,85 @@
+{{define "_traffic_overview"}}
+<h2>Traffic Overview <small>(last 24h)</small></h2>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <span class="stat-value">{{.Extra.Total}}</span>
+    <span class="stat-label">Total Requests</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value">{{.Extra.UniqueIPs}}</span>
+    <span class="stat-label">Unique IPs</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-value">{{.Extra.Bots}}</span>
+    <span class="stat-label">Bot Requests</span>
+  </div>
+</div>
+
+<div class="tables-row">
+  {{/* Requests by host */}}
+  <div class="mini-table">
+    <h3>By Host</h3>
+    <table>
+      <thead><tr><th>Host</th><th>Requests</th></tr></thead>
+      <tbody>
+        {{range .Extra.ByHost}}
+        <tr><td>{{.Host}}</td><td>{{.Cnt}}</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{/* Top IPs */}}
+  <div class="mini-table">
+    <h3>Top IPs</h3>
+    <table>
+      <thead><tr><th>IP</th><th>Requests</th><th></th></tr></thead>
+      <tbody>
+        {{range .Extra.TopIPs}}
+        <tr>
+          <td>{{.ClientIp}}</td>
+          <td>{{.Cnt}}</td>
+          <td>
+            <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from top IPs"}' hx-target="#ip-list" hx-swap="innerHTML">Block</button>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{/* Top User Agents */}}
+  <div class="mini-table">
+    <h3>Top User Agents</h3>
+    <table>
+      <thead><tr><th>User Agent</th><th>Requests</th><th>Bot</th></tr></thead>
+      <tbody>
+        {{range .Extra.TopUAs}}
+        <tr{{if eq .IsBot 1}} class="bot-row"{{end}}>
+          <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 50}}</td>
+          <td>{{.Cnt}}</td>
+          <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{/* Status Codes */}}
+  <div class="mini-table">
+    <h3>Status Codes</h3>
+    <table>
+      <thead><tr><th>Status</th><th>Count</th></tr></thead>
+      <tbody>
+        {{range .Extra.StatusCodes}}
+        <tr class="{{statusClass .Status}}">
+          <td>{{.Status}}</td>
+          <td>{{.Cnt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}

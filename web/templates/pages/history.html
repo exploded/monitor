@@ -1,0 +1,28 @@
+{{define "content"}}
+<h1>History</h1>
+
+{{/* Hourly Chart */}}
+<section class="panel panel-wide" id="hourly-chart">
+  {{template "_hourly_chart" .}}
+</section>
+
+{{/* Daily Summary */}}
+<section class="panel panel-wide" id="daily-summary">
+  {{template "_daily_summary" .}}
+</section>
+
+{{/* Search */}}
+<section class="panel panel-wide">
+  <h2>Search</h2>
+  <form hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
+    <input type="text" name="host" placeholder="Host">
+    <input type="text" name="ip" placeholder="IP">
+    <input type="text" name="ua" placeholder="User Agent">
+    <input type="number" name="status" placeholder="Status">
+    <input type="date" name="from">
+    <input type="date" name="to">
+    <button type="submit" class="btn btn-primary">Search</button>
+  </form>
+  <div id="search-results"></div>
+</section>
+{{end}}

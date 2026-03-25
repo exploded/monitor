@@ -1,0 +1,18 @@
+[Unit]
+Description=Server Monitor Portal
+After=network.target caddy.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/monitor
+ExecStart=/var/www/monitor/monitor
+EnvironmentFile=/var/www/monitor/.env
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,38 @@
+{{define "_bot_list"}}
+<h2>Bot Patterns</h2>
+
+<form hx-post="/bots" hx-target="#bot-list" hx-swap="innerHTML" class="inline-form">
+  <input type="text" name="pattern" placeholder="User agent pattern" required>
+  <input type="text" name="label" placeholder="Label" required>
+  <label class="checkbox-label"><input type="checkbox" name="block" value="1"> Block</label>
+  <button type="submit" class="btn btn-primary">Add</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Pattern</th>
+      <th>Label</th>
+      <th>Block</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.BotPatterns}}
+    <tr>
+      <td><code>{{.Pattern}}</code></td>
+      <td>{{.Label}}</td>
+      <td>
+        <button class="btn-sm{{if eq .Block 1}} btn-danger{{else}} btn-muted{{end}}"
+          hx-post="/bots/{{.ID}}/toggle" hx-target="#bot-list" hx-swap="innerHTML">
+          {{if eq .Block 1}}Blocked{{else}}Allow{{end}}
+        </button>
+      </td>
+      <td>
+        <button class="btn-sm btn-danger" hx-post="/bots/{{.ID}}/delete" hx-target="#bot-list" hx-swap="innerHTML" hx-confirm="Delete pattern '{{.Pattern}}'?">Delete</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

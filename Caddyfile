@@ -1,0 +1,36 @@
+{
+	# Global options
+	admin localhost:2019
+}
+
+# Example: monitor portal behind Caddy
+monitor.example.com {
+	reverse_proxy localhost:8484
+}
+
+# Example: other virtual hosts with JSON logging
+example.com {
+	root * /var/www/example
+	file_server
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+		format json
+	}
+}
+
+blog.example.com {
+	root * /var/www/blog
+	file_server
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 100mb
+			roll_keep 5
+		}
+		format json
+	}
+}

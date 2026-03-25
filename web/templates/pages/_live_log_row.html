@@ -1,0 +1,14 @@
+{{define "_live_log_row"}}
+<tr class="{{statusClass .Status}}{{if eq .IsBot 1}} bot-row{{end}}">
+  <td>{{formatTime .Ts}}</td>
+  <td>{{.Host}}</td>
+  <td>{{.ClientIp}}</td>
+  <td>{{.Method}}</td>
+  <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
+  <td>{{.Status}}</td>
+  <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
+  <td>
+    <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from live log"}' hx-target="#ip-list" hx-swap="innerHTML">Block</button>
+  </td>
+</tr>
+{{end}}

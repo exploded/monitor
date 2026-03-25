@@ -1,0 +1,8 @@
+monitor
+monitor.exe
+*.db
+*.db-wal
+*.db-shm
+.env
+.vscode/
+.claude/settings.local.json

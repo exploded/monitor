@@ -1,0 +1,21 @@
+{{define "_hourly_chart"}}
+<h2>Requests per Hour <small>(last 24h)</small></h2>
+{{if .Extra.Bars}}
+<div class="chart-wrap">
+  <svg viewBox="0 0 {{multiply (len .Extra.Bars) 30}} 200" class="bar-chart" preserveAspectRatio="none">
+    {{range $i, $bar := .Extra.Bars}}
+    <rect x="{{multiply $i 30}}" y="{{sub 200 $bar.Height}}" width="28" height="{{$bar.Height}}" class="bar">
+      <title>{{$bar.Hour}}: {{$bar.Count}} requests</title>
+    </rect>
+    {{end}}
+  </svg>
+  <div class="chart-labels">
+    {{range .Extra.Bars}}
+    <span class="chart-label">{{truncate .Hour 5}}</span>
+    {{end}}
+  </div>
+</div>
+{{else}}
+<p class="muted">No data for the last 24 hours.</p>
+{{end}}
+{{end}}

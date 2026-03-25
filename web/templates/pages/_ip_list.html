@@ -1,0 +1,32 @@
+{{define "_ip_list"}}
+<h2>Blocked IPs</h2>
+
+<form hx-post="/ips" hx-target="#ip-list" hx-swap="innerHTML" class="inline-form">
+  <input type="text" name="ip" placeholder="IP address" required>
+  <input type="text" name="reason" placeholder="Reason (optional)">
+  <button type="submit" class="btn btn-primary">Block</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>IP</th>
+      <th>Reason</th>
+      <th>Blocked At</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.BlockedIPs}}
+    <tr>
+      <td><code>{{.Ip}}</code></td>
+      <td>{{.Reason}}</td>
+      <td>{{formatDateTime .CreatedAt}}</td>
+      <td>
+        <button class="btn-sm btn-danger" hx-post="/ips/{{.ID}}/delete" hx-target="#ip-list" hx-swap="innerHTML" hx-confirm="Unblock {{.Ip}}?">Unblock</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

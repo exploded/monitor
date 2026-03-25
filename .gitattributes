@@ -1,0 +1,25 @@
+# Force LF line endings for all text files (Windows → Linux deploys)
+* text=auto eol=lf
+
+# Explicit text files
+*.go text eol=lf
+*.sql text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+*.service text eol=lf
+Caddyfile text eol=lf
+
+# Binary files
+*.jpg binary
+*.png binary
+*.ico binary
+*.db binary
