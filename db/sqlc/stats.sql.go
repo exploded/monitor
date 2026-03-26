@@ -11,6 +11,76 @@ import (
 	"time"
 )
 
+const bandwidthByHostSince = `-- name: BandwidthByHostSince :many
+SELECT host, SUM(size) AS total_bytes, COUNT(*) AS cnt
+FROM requests WHERE ts >= ?
+GROUP BY host ORDER BY total_bytes DESC
+`
+
+type BandwidthByHostSinceRow struct {
+	Host       string          `json:"host"`
+	TotalBytes sql.NullFloat64 `json:"total_bytes"`
+	Cnt        int64           `json:"cnt"`
+}
+
+func (q *Queries) BandwidthByHostSince(ctx context.Context, ts time.Time) ([]BandwidthByHostSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, bandwidthByHostSince, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BandwidthByHostSinceRow
+	for rows.Next() {
+		var i BandwidthByHostSinceRow
+		if err := rows.Scan(&i.Host, &i.TotalBytes, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const dailyBandwidthSummary = `-- name: DailyBandwidthSummary :many
+SELECT date(ts) AS day, SUM(size) AS total_bytes, COUNT(*) AS cnt
+FROM requests WHERE ts >= ?
+GROUP BY day ORDER BY day DESC
+`
+
+type DailyBandwidthSummaryRow struct {
+	Day        interface{}     `json:"day"`
+	TotalBytes sql.NullFloat64 `json:"total_bytes"`
+	Cnt        int64           `json:"cnt"`
+}
+
+func (q *Queries) DailyBandwidthSummary(ctx context.Context, ts time.Time) ([]DailyBandwidthSummaryRow, error) {
+	rows, err := q.db.QueryContext(ctx, dailyBandwidthSummary, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyBandwidthSummaryRow
+	for rows.Next() {
+		var i DailyBandwidthSummaryRow
+		if err := rows.Scan(&i.Day, &i.TotalBytes, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const dailySummary = `-- name: DailySummary :many
 SELECT
     date(ts) AS day,
@@ -18,7 +88,8 @@ SELECT
     SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END) AS bots,
     COUNT(DISTINCT client_ip) AS unique_ips,
     SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors,
-    ROUND(AVG(duration_ms), 1) AS avg_duration_ms
+    ROUND(AVG(duration_ms), 1) AS avg_duration_ms,
+    SUM(size) AS total_bytes
 FROM requests
 WHERE ts >= ?
 GROUP BY day ORDER BY day DESC
@@ -31,6 +102,7 @@ type DailySummaryRow struct {
 	UniqueIps     int64           `json:"unique_ips"`
 	Errors        sql.NullFloat64 `json:"errors"`
 	AvgDurationMs float64         `json:"avg_duration_ms"`
+	TotalBytes    sql.NullFloat64 `json:"total_bytes"`
 }
 
 func (q *Queries) DailySummary(ctx context.Context, ts time.Time) ([]DailySummaryRow, error) {
@@ -49,7 +121,89 @@ func (q *Queries) DailySummary(ctx context.Context, ts time.Time) ([]DailySummar
 			&i.UniqueIps,
 			&i.Errors,
 			&i.AvgDurationMs,
+			&i.TotalBytes,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const hourlyBandwidth = `-- name: HourlyBandwidth :many
+SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, SUM(size) AS total_bytes, COUNT(*) AS cnt
+FROM requests
+WHERE ts >= ?1 AND (?2 = '' OR host = ?2)
+GROUP BY hour ORDER BY hour
+`
+
+type HourlyBandwidthParams struct {
+	Since      time.Time   `json:"since"`
+	HostFilter interface{} `json:"host_filter"`
+}
+
+type HourlyBandwidthRow struct {
+	Hour       interface{}     `json:"hour"`
+	TotalBytes sql.NullFloat64 `json:"total_bytes"`
+	Cnt        int64           `json:"cnt"`
+}
+
+func (q *Queries) HourlyBandwidth(ctx context.Context, arg HourlyBandwidthParams) ([]HourlyBandwidthRow, error) {
+	rows, err := q.db.QueryContext(ctx, hourlyBandwidth, arg.Since, arg.HostFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HourlyBandwidthRow
+	for rows.Next() {
+		var i HourlyBandwidthRow
+		if err := rows.Scan(&i.Hour, &i.TotalBytes, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const hourlyDurations = `-- name: HourlyDurations :many
+SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, duration_ms
+FROM requests
+WHERE ts >= ?1 AND (?2 = '' OR host = ?2)
+ORDER BY hour, duration_ms
+`
+
+type HourlyDurationsParams struct {
+	Since      time.Time   `json:"since"`
+	HostFilter interface{} `json:"host_filter"`
+}
+
+type HourlyDurationsRow struct {
+	Hour       interface{} `json:"hour"`
+	DurationMs float64     `json:"duration_ms"`
+}
+
+func (q *Queries) HourlyDurations(ctx context.Context, arg HourlyDurationsParams) ([]HourlyDurationsRow, error) {
+	rows, err := q.db.QueryContext(ctx, hourlyDurations, arg.Since, arg.HostFilter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []HourlyDurationsRow
+	for rows.Next() {
+		var i HourlyDurationsRow
+		if err := rows.Scan(&i.Hour, &i.DurationMs); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -138,6 +292,103 @@ func (q *Queries) HourlyRequestCountsByHost(ctx context.Context, arg HourlyReque
 	return items, nil
 }
 
+const iPReputationData = `-- name: IPReputationData :many
+SELECT
+    client_ip,
+    COUNT(*) AS total,
+    SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END) AS count_4xx,
+    SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END) AS bot_count,
+    MIN(ts) AS first_seen,
+    MAX(ts) AS last_seen
+FROM requests
+WHERE ts >= ?
+GROUP BY client_ip
+HAVING total >= 3
+ORDER BY total DESC
+LIMIT ?
+`
+
+type IPReputationDataParams struct {
+	Ts    time.Time `json:"ts"`
+	Limit int64     `json:"limit"`
+}
+
+type IPReputationDataRow struct {
+	ClientIp  string          `json:"client_ip"`
+	Total     int64           `json:"total"`
+	Count4xx  sql.NullFloat64 `json:"count_4xx"`
+	BotCount  sql.NullFloat64 `json:"bot_count"`
+	FirstSeen interface{}     `json:"first_seen"`
+	LastSeen  interface{}     `json:"last_seen"`
+}
+
+func (q *Queries) IPReputationData(ctx context.Context, arg IPReputationDataParams) ([]IPReputationDataRow, error) {
+	rows, err := q.db.QueryContext(ctx, iPReputationData, arg.Ts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IPReputationDataRow
+	for rows.Next() {
+		var i IPReputationDataRow
+		if err := rows.Scan(
+			&i.ClientIp,
+			&i.Total,
+			&i.Count4xx,
+			&i.BotCount,
+			&i.FirstSeen,
+			&i.LastSeen,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const minutelyRequestCountsByHost = `-- name: MinutelyRequestCountsByHost :many
+SELECT host, strftime('%Y-%m-%d %H:%M', ts) AS minute, COUNT(*) AS cnt
+FROM requests
+WHERE ts >= ?
+GROUP BY host, minute
+ORDER BY host, minute
+`
+
+type MinutelyRequestCountsByHostRow struct {
+	Host   string      `json:"host"`
+	Minute interface{} `json:"minute"`
+	Cnt    int64       `json:"cnt"`
+}
+
+func (q *Queries) MinutelyRequestCountsByHost(ctx context.Context, ts time.Time) ([]MinutelyRequestCountsByHostRow, error) {
+	rows, err := q.db.QueryContext(ctx, minutelyRequestCountsByHost, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []MinutelyRequestCountsByHostRow
+	for rows.Next() {
+		var i MinutelyRequestCountsByHostRow
+		if err := rows.Scan(&i.Host, &i.Minute, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchRequests = `-- name: SearchRequests :many
 SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
@@ -163,7 +414,21 @@ type SearchRequestsParams struct {
 	Lim          int64       `json:"lim"`
 }
 
-func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) ([]Request, error) {
+type SearchRequestsRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+}
+
+func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) ([]SearchRequestsRow, error) {
 	rows, err := q.db.QueryContext(ctx, searchRequests,
 		arg.HostFilter,
 		arg.IpFilter,
@@ -178,9 +443,9 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Request
+	var items []SearchRequestsRow
 	for rows.Next() {
-		var i Request
+		var i SearchRequestsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ts,
@@ -194,6 +459,124 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 			&i.DurationMs,
 			&i.IsBot,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchRequestsExport = `-- name: SearchRequestsExport :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+FROM requests
+WHERE (?1 = '' OR host = ?1)
+  AND (?2 = '' OR client_ip = ?2)
+  AND (?3 = 0
+       OR (?3 < 10 AND status / 100 = ?3)
+       OR (?3 >= 10 AND status = ?3))
+  AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
+  AND ts >= ?5 AND ts <= ?6
+ORDER BY id DESC
+LIMIT 10000
+`
+
+type SearchRequestsExportParams struct {
+	HostFilter   interface{} `json:"host_filter"`
+	IpFilter     interface{} `json:"ip_filter"`
+	StatusFilter interface{} `json:"status_filter"`
+	UaFilter     interface{} `json:"ua_filter"`
+	FromTs       time.Time   `json:"from_ts"`
+	ToTs         time.Time   `json:"to_ts"`
+}
+
+type SearchRequestsExportRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+}
+
+func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsExportParams) ([]SearchRequestsExportRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchRequestsExport,
+		arg.HostFilter,
+		arg.IpFilter,
+		arg.StatusFilter,
+		arg.UaFilter,
+		arg.FromTs,
+		arg.ToTs,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchRequestsExportRow
+	for rows.Next() {
+		var i SearchRequestsExportRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ts,
+			&i.Host,
+			&i.ClientIp,
+			&i.Method,
+			&i.Uri,
+			&i.Status,
+			&i.Size,
+			&i.UserAgent,
+			&i.DurationMs,
+			&i.IsBot,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topCountriesSince = `-- name: TopCountriesSince :many
+SELECT country, COUNT(*) AS cnt
+FROM requests WHERE ts >= ? AND country != ''
+GROUP BY country ORDER BY cnt DESC LIMIT ?
+`
+
+type TopCountriesSinceParams struct {
+	Ts    time.Time `json:"ts"`
+	Limit int64     `json:"limit"`
+}
+
+type TopCountriesSinceRow struct {
+	Country string `json:"country"`
+	Cnt     int64  `json:"cnt"`
+}
+
+func (q *Queries) TopCountriesSince(ctx context.Context, arg TopCountriesSinceParams) ([]TopCountriesSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, topCountriesSince, arg.Ts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopCountriesSinceRow
+	for rows.Next() {
+		var i TopCountriesSinceRow
+		if err := rows.Scan(&i.Country, &i.Cnt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

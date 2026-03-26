@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/reputation"
 )
 
 // Dashboard renders the main dashboard page.
@@ -29,27 +32,105 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	botPatterns, _ := h.q.ListBotPatterns(ctx)
 	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
 	autoblockRules, _ := h.q.ListAutoblockRules(ctx)
+	honeypots, _ := h.q.ListHoneypots(ctx)
+	alertRules, _ := h.q.ListAlertRules(ctx)
+	alertLogs, _ := h.q.RecentAlertLogs(ctx, 20)
+	topCountries, _ := h.q.TopCountriesSince(ctx, db.TopCountriesSinceParams{Ts: since, Limit: 15})
+	anomalies, _ := h.q.RecentAnomalies(ctx, 20)
+
+	// IP reputation scores
+	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
+	blockedSet := make(map[string]bool, len(blockedIPs))
+	for _, ip := range blockedIPs {
+		blockedSet[ip.Ip] = true
+	}
+	ipScores := make(map[string]int)
+	for _, row := range repData {
+		var firstSeen, lastSeen time.Time
+		if t, ok := row.FirstSeen.(time.Time); ok {
+			firstSeen = t
+		}
+		if t, ok := row.LastSeen.(time.Time); ok {
+			lastSeen = t
+		}
+		score := reputation.Compute(reputation.IPData{
+			ClientIP:  row.ClientIp,
+			Total:     row.Total,
+			Count4xx:  int64(row.Count4xx.Float64),
+			BotCount:  int64(row.BotCount.Float64),
+			FirstSeen: firstSeen,
+			LastSeen:  lastSeen,
+			IsBlocked: blockedSet[row.ClientIp],
+		})
+		if score.Value >= 26 {
+			ipScores[row.ClientIp] = score.Value
+		}
+	}
 	appErrors, _ := h.q.RecentAppErrors(ctx, 20)
 	appErrorCount, _ := h.q.CountAppErrorsSince(ctx, since)
 	appLogCount, _ := h.q.CountAppLogsSince(ctx, since)
 
+	// Sparklines for initial dashboard load
+	sparkSince := time.Now().UTC().Add(-60 * time.Minute)
+	minuteRows, _ := h.q.MinutelyRequestCountsByHost(ctx, sparkSince)
+	hostMinutes := make(map[string]map[string]int64)
+	for _, row := range minuteRows {
+		min := ""
+		if s, ok := row.Minute.(string); ok {
+			min = s
+		}
+		if _, exists := hostMinutes[row.Host]; !exists {
+			hostMinutes[row.Host] = make(map[string]int64)
+		}
+		hostMinutes[row.Host][min] = row.Cnt
+	}
+	sparklines := make(map[string]string)
+	for host, minutes := range hostMinutes {
+		counts := make([]int64, 60)
+		var maxC int64
+		for i := 0; i < 60; i++ {
+			t := sparkSince.Add(time.Duration(i) * time.Minute)
+			key := t.Format("2006-01-02 15:04")
+			counts[i] = minutes[key]
+			if counts[i] > maxC {
+				maxC = counts[i]
+			}
+		}
+		if maxC == 0 {
+			maxC = 1
+		}
+		pts := make([]string, 60)
+		for i, c := range counts {
+			y := 20 - int(float64(c)/float64(maxC)*18)
+			pts[i] = fmt.Sprintf("%d,%d", i, y)
+		}
+		sparklines[host] = strings.Join(pts, " ")
+	}
+
 	h.render(w, r, "dashboard", "", PageData{
 		Title: "Dashboard",
 		Extra: map[string]any{
-			"Total":         total,
-			"Bots":          bots,
-			"UniqueIPs":     uniqueIPs,
-			"TopIPs":        topIPs,
-			"TopUAs":        topUAs,
-			"ByHost":        byHost,
-			"StatusCodes":   statusCodes,
-			"Recent":        recent,
-			"BotPatterns":   botPatterns,
-			"BlockedIPs":      blockedIPs,
-			"AutoblockRules":  autoblockRules,
-			"AppErrors":       appErrors,
-			"AppErrorCount": appErrorCount,
-			"AppLogCount":   appLogCount,
+			"Total":          total,
+			"Bots":           bots,
+			"UniqueIPs":      uniqueIPs,
+			"TopIPs":         topIPs,
+			"TopUAs":         topUAs,
+			"ByHost":         byHost,
+			"StatusCodes":    statusCodes,
+			"Recent":         recent,
+			"BotPatterns":    botPatterns,
+			"BlockedIPs":     blockedIPs,
+			"AutoblockRules": autoblockRules,
+			"Honeypots":      honeypots,
+			"AppErrors":      appErrors,
+			"AppErrorCount":  appErrorCount,
+			"AppLogCount":    appLogCount,
+			"Sparklines":     sparklines,
+			"IPScores":       ipScores,
+			"AlertRules":     alertRules,
+			"AlertLogs":      alertLogs,
+			"TopCountries":   topCountries,
+			"Anomalies":      anomalies,
 		},
 	})
 }
@@ -67,6 +148,77 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 	byHost, _ := h.q.RequestsByHostSince(ctx, since)
 	statusCodes, _ := h.q.StatusCodesSince(ctx, since)
 
+	// IP reputation scores for top IPs
+	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
+	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
+	blockedSet := make(map[string]bool, len(blockedIPs))
+	for _, ip := range blockedIPs {
+		blockedSet[ip.Ip] = true
+	}
+	ipScores := make(map[string]int)
+	for _, row := range repData {
+		var firstSeen, lastSeen time.Time
+		if t, ok := row.FirstSeen.(time.Time); ok {
+			firstSeen = t
+		}
+		if t, ok := row.LastSeen.(time.Time); ok {
+			lastSeen = t
+		}
+		score := reputation.Compute(reputation.IPData{
+			ClientIP:  row.ClientIp,
+			Total:     row.Total,
+			Count4xx:  int64(row.Count4xx.Float64),
+			BotCount:  int64(row.BotCount.Float64),
+			FirstSeen: firstSeen,
+			LastSeen:  lastSeen,
+			IsBlocked: blockedSet[row.ClientIp],
+		})
+		if score.Value >= 26 {
+			ipScores[row.ClientIp] = score.Value
+		}
+	}
+
+	// Build sparkline SVG points per host (last 60 minutes)
+	sparkSince := time.Now().UTC().Add(-60 * time.Minute)
+	minuteRows, _ := h.q.MinutelyRequestCountsByHost(ctx, sparkSince)
+
+	// Group by host
+	hostMinutes := make(map[string]map[string]int64)
+	for _, row := range minuteRows {
+		min := ""
+		if s, ok := row.Minute.(string); ok {
+			min = s
+		}
+		if _, exists := hostMinutes[row.Host]; !exists {
+			hostMinutes[row.Host] = make(map[string]int64)
+		}
+		hostMinutes[row.Host][min] = row.Cnt
+	}
+
+	// Generate SVG points string per host
+	sparklines := make(map[string]string)
+	for host, minutes := range hostMinutes {
+		counts := make([]int64, 60)
+		var maxC int64
+		for i := 0; i < 60; i++ {
+			t := sparkSince.Add(time.Duration(i) * time.Minute)
+			key := t.Format("2006-01-02 15:04")
+			counts[i] = minutes[key]
+			if counts[i] > maxC {
+				maxC = counts[i]
+			}
+		}
+		if maxC == 0 {
+			maxC = 1
+		}
+		pts := make([]string, 60)
+		for i, c := range counts {
+			y := 20 - int(float64(c)/float64(maxC)*18)
+			pts[i] = fmt.Sprintf("%d,%d", i, y)
+		}
+		sparklines[host] = strings.Join(pts, " ")
+	}
+
 	data := PageData{
 		Extra: map[string]any{
 			"Total":       total,
@@ -76,6 +228,8 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 			"TopUAs":      topUAs,
 			"ByHost":      byHost,
 			"StatusCodes": statusCodes,
+			"Sparklines":  sparklines,
+			"IPScores":    ipScores,
 		},
 	}
 

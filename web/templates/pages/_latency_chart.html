@@ -1,0 +1,29 @@
+{{define "_latency_chart"}}
+<h2>Response Time Percentiles <small>(last 24h)</small></h2>
+{{if .Extra.LatencyPoints}}
+<div class="chart-legend">
+  <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> p50</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--amber)"></span> p95</span>
+  <span class="legend-item"><span class="legend-dot" style="background:var(--red)"></span> p99</span>
+</div>
+<div class="chart-wrap">
+  <svg viewBox="0 0 {{.Extra.ChartWidth}} 160" class="line-chart" preserveAspectRatio="none">
+    <polyline fill="none" stroke="var(--green)" stroke-width="2" points="{{range .Extra.LatencyPoints}}{{.X}},{{.Y50}} {{end}}"></polyline>
+    <polyline fill="none" stroke="var(--amber)" stroke-width="2" points="{{range .Extra.LatencyPoints}}{{.X}},{{.Y95}} {{end}}"></polyline>
+    <polyline fill="none" stroke="var(--red)" stroke-width="2" points="{{range .Extra.LatencyPoints}}{{.X}},{{.Y99}} {{end}}"></polyline>
+    {{range .Extra.LatencyPoints}}
+    <circle cx="{{.X}}" cy="{{.Y99}}" r="3" fill="var(--red)">
+      <title>{{.Hour}} — p50: {{printf "%.0f" .P50}}ms / p95: {{printf "%.0f" .P95}}ms / p99: {{printf "%.0f" .P99}}ms</title>
+    </circle>
+    {{end}}
+  </svg>
+  <div class="chart-labels">
+    {{range .Extra.LatencyPoints}}
+    <span class="chart-label-wide">{{truncate .Hour 5}}</span>
+    {{end}}
+  </div>
+</div>
+{{else}}
+<p class="muted">No latency data for the last 24 hours.</p>
+{{end}}
+{{end}}

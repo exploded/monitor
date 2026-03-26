@@ -241,6 +241,66 @@ tr:hover { background: var(--surface-hover); }
 }
 .chart-label { width: 30px; text-align: center; }
 
+/* ===== Status Dots (Uptime) ===== */
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.status-up { background: var(--green); }
+.status-down { background: var(--red); }
+
+/* ===== Inline Bar ===== */
+.bar-inline {
+  display: inline-block;
+  height: 10px;
+  background: var(--primary);
+  border-radius: 2px;
+  vertical-align: middle;
+  margin-right: 0.3rem;
+  min-width: 2px;
+}
+
+/* ===== Threat Badges ===== */
+.threat-badge {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #fff;
+}
+.threat-med { background: var(--amber); }
+.threat-high { background: #e07030; }
+.threat-crit { background: var(--red); }
+
+/* ===== Sparklines ===== */
+.sparkline { width: 80px; height: 20px; vertical-align: middle; }
+
+/* ===== Line Charts ===== */
+.line-chart { width: 100%; height: 160px; }
+.chart-legend { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
+.legend-item { display: flex; align-items: center; gap: 0.3rem; color: var(--text-muted); }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.chart-label-wide { width: 40px; text-align: center; font-size: 0.65rem; color: var(--text-muted); }
+
+/* ===== Bandwidth Chart ===== */
+.bar-bw { fill: var(--green); }
+.bar-bw:hover { fill: #4cc07a; }
+
+/* ===== Select Styling ===== */
+select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: var(--font);
+}
+select:focus { outline: none; border-color: var(--primary); }
+
 /* ===== Misc ===== */
 .muted { color: var(--text-muted); font-style: italic; }
 h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 1.25rem; }

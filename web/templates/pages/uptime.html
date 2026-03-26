@@ -1,0 +1,68 @@
+{{define "content"}}
+<h1>Uptime Monitoring</h1>
+
+<section class="panel panel-wide">
+  <h2>Add Target</h2>
+  <form action="/uptime" method="POST" class="inline-form">
+    <input type="text" name="name" placeholder="Name (e.g. Moon)" required>
+    <input type="text" name="url" placeholder="URL (e.g. https://moon.example.com/health)" required>
+    <input type="number" name="interval" placeholder="Interval (s)" value="60" min="10" style="width:100px">
+    <input type="number" name="expected_status" placeholder="Expected" value="200" style="width:80px">
+    <button type="submit" class="btn btn-primary">Add</button>
+  </form>
+</section>
+
+<section class="panel panel-wide">
+  <h2>Targets</h2>
+  {{if .Extra.Statuses}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>Name</th>
+        <th>URL</th>
+        <th>Uptime (24h)</th>
+        <th>Avg Response</th>
+        <th>Last Check</th>
+        <th>Interval</th>
+        <th></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Extra.Statuses}}
+      <tr>
+        <td>
+          {{if .IsUp}}<span class="status-dot status-up"></span>{{else}}<span class="status-dot status-down"></span>{{end}}
+        </td>
+        <td><strong>{{.Target.Name}}</strong></td>
+        <td class="uri-cell" title="{{.Target.Url}}">{{truncate .Target.Url 40}}</td>
+        <td>{{printf "%.1f" .UptimePct}}%</td>
+        <td>{{printf "%.0f" .AvgMs}} ms</td>
+        <td>
+          {{if .LastCheck}}
+            {{formatDateTime .LastCheck.Ts}}
+            {{if .LastCheck.Error}}<br><small class="muted">{{truncate .LastCheck.Error 40}}</small>{{end}}
+          {{else}}
+            <span class="muted">pending</span>
+          {{end}}
+        </td>
+        <td>{{.Target.IntervalSeconds}}s</td>
+        <td>
+          <button class="btn-sm{{if eq .Target.Enabled 1}} btn-block{{else}} btn-muted{{end}}"
+            hx-post="/uptime/{{.Target.ID}}/toggle" hx-target="body">
+            {{if eq .Target.Enabled 1}}Enabled{{else}}Disabled{{end}}
+          </button>
+        </td>
+        <td>
+          <button class="btn-sm btn-danger" hx-post="/uptime/{{.Target.ID}}/delete" hx-target="body" hx-confirm="Delete target '{{.Target.Name}}'?">Delete</button>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No uptime targets configured. Add one above.</p>
+  {{end}}
+</section>
+{{end}}

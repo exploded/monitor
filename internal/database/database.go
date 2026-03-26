@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -38,14 +39,47 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 
+	// Migrations: add columns that may not exist yet (safe to re-run)
+	migrations := []string{
+		"ALTER TABLE requests ADD COLUMN country TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE requests ADD COLUMN city TEXT NOT NULL DEFAULT ''",
+	}
+	for _, m := range migrations {
+		if _, err := d.Exec(m); err != nil {
+			// Ignore "duplicate column name" errors
+			if !isDuplicateColumn(err) {
+				d.Close()
+				return nil, fmt.Errorf("migration: %w", err)
+			}
+		}
+	}
+
+	// Create indexes for new columns (IF NOT EXISTS is safe)
+	d.Exec("CREATE INDEX IF NOT EXISTS idx_requests_country ON requests(country)")
+
 	return d, nil
 }
 
-// Prune deletes requests older than the given number of days.
+func isDuplicateColumn(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "duplicate column") || strings.Contains(s, "already exists")
+}
+
+// Prune deletes requests and related data older than the given number of days.
 func Prune(ctx context.Context, q *db.Queries, retentionDays int) error {
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	if err := q.DeleteRequestsBefore(ctx, cutoff); err != nil {
 		return err
 	}
-	return q.DeleteAppLogsBefore(ctx, cutoff)
+	if err := q.DeleteAppLogsBefore(ctx, cutoff); err != nil {
+		return err
+	}
+	// Best-effort prune for optional tables (may not exist yet)
+	q.DeleteAlertLogsBefore(ctx, cutoff)
+	q.DeleteUptimeChecksBefore(ctx, cutoff)
+	q.DeleteAnomaliesBefore(ctx, cutoff)
+	return nil
 }

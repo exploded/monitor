@@ -14,6 +14,7 @@ import (
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/geoip"
 )
 
 // Broadcaster sends data to connected SSE clients.
@@ -39,27 +40,31 @@ type CaddyLogEntry struct {
 // Watcher tails a Caddy access log file, parses JSON entries,
 // and writes them to SQLite while broadcasting to SSE clients.
 type Watcher struct {
-	logPath     string
-	rawDB       *sql.DB
-	q           *db.Queries
-	hub         Broadcaster
-	matcher     *BotMatcher
-	autoBlocker *AutoBlocker
-	rowTmpl     *template.Template
-	ingestCh    chan db.InsertRequestParams
+	logPath          string
+	rawDB            *sql.DB
+	q                *db.Queries
+	hub              Broadcaster
+	matcher          *BotMatcher
+	autoBlocker      *AutoBlocker
+	honeypotChecker  *HoneypotChecker
+	geo              *geoip.Resolver
+	rowTmpl          *template.Template
+	ingestCh         chan db.InsertRequestParams
 }
 
 // New creates a Watcher. The rowTmpl is used to render live log HTML for SSE.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, rowTmpl *template.Template) *Watcher {
+func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template) *Watcher {
 	return &Watcher{
-		logPath:     logPath,
-		rawDB:       rawDB,
-		q:           q,
-		hub:         hub,
-		matcher:     matcher,
-		autoBlocker: autoBlocker,
-		rowTmpl:     rowTmpl,
-		ingestCh:    make(chan db.InsertRequestParams, 256),
+		logPath:         logPath,
+		rawDB:           rawDB,
+		q:               q,
+		hub:             hub,
+		matcher:         matcher,
+		autoBlocker:     autoBlocker,
+		honeypotChecker: honeypotChecker,
+		geo:             geo,
+		rowTmpl:         rowTmpl,
+		ingestCh:        make(chan db.InsertRequestParams, 256),
 	}
 }
 
@@ -153,6 +158,14 @@ func (w *Watcher) processLine(line []byte) {
 		w.autoBlocker.Check(entry.Request.URI, entry.Request.ClientIP)
 	}
 
+	// Check honeypot paths against the URI
+	if w.honeypotChecker != nil {
+		w.honeypotChecker.Check(entry.Request.URI, entry.Request.ClientIP)
+	}
+
+	// GeoIP lookup
+	country, city := w.geo.Lookup(entry.Request.ClientIP)
+
 	params := db.InsertRequestParams{
 		Ts:         ts,
 		Host:       entry.Request.Host,
@@ -164,6 +177,8 @@ func (w *Watcher) processLine(line []byte) {
 		UserAgent:  ua,
 		DurationMs: entry.Duration * 1000,
 		IsBot:      isBotInt,
+		Country:    country,
+		City:       city,
 	}
 
 	// Send to batch writer

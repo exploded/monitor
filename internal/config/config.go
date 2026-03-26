@@ -8,14 +8,16 @@ import (
 )
 
 type Config struct {
-	Port          string
-	DBPath        string
-	LogPath       string
-	CaddyAdminURL string
-	AuthUser      string
-	AuthPass      string
-	RetentionDays int
-	LogAPIKey     string
+	Port              string
+	DBPath            string
+	LogPath           string
+	CaddyAdminURL     string
+	AuthUser          string
+	AuthPass          string
+	RetentionDays     int
+	LogAPIKey         string
+	DiscordWebhookURL string
+	GeoIPDBPath       string
 }
 
 func Load() Config {
@@ -33,8 +35,10 @@ func Load() Config {
 		CaddyAdminURL: envOr("CADDY_ADMIN_URL", "http://localhost:2019"),
 		AuthUser:      envOr("AUTH_USER", "admin"),
 		AuthPass:      os.Getenv("AUTH_PASS"),
-		RetentionDays: retention,
-		LogAPIKey:     os.Getenv("LOG_API_KEY"),
+		RetentionDays:     retention,
+		LogAPIKey:         os.Getenv("LOG_API_KEY"),
+		DiscordWebhookURL: os.Getenv("DISCORD_WEBHOOK_URL"),
+		GeoIPDBPath:       envOr("GEOIP_DB_PATH", "GeoLite2-City.mmdb"),
 	}
 }
 

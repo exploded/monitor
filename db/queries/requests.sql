@@ -1,6 +1,6 @@
 -- name: InsertRequest :exec
-INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CountRequests :one
 SELECT COUNT(*) FROM requests;

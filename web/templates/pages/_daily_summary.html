@@ -11,6 +11,7 @@
         <th>Unique IPs</th>
         <th>Errors</th>
         <th>Avg Duration (ms)</th>
+        <th>Bandwidth</th>
       </tr>
     </thead>
     <tbody>
@@ -22,6 +23,7 @@
         <td>{{.UniqueIps}}</td>
         <td>{{.Errors.Float64}}</td>
         <td>{{.AvgDurationMs}}</td>
+        <td>{{if .TotalBytes.Valid}}{{humanSize (toInt64 .TotalBytes.Float64)}}{{else}}0 B{{end}}</td>
       </tr>
       {{end}}
     </tbody>

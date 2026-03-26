@@ -8,6 +8,11 @@
     {{template "_traffic_overview" .}}
   </section>
 
+  {{/* GeoIP — Traffic by Country */}}
+  <section class="panel panel-wide" id="geo-map">
+    {{template "_geo_map" .}}
+  </section>
+
   {{/* Live Log — SSE stream */}}
   <section class="panel panel-wide">
     <h2>Live Log</h2>
@@ -58,6 +63,28 @@
   {{/* Auto-Block Rules */}}
   <section class="panel panel-wide" id="autoblock-list">
     {{template "_autoblock_list" .}}
+  </section>
+
+  {{/* Honeypots */}}
+  <section class="panel panel-wide" id="honeypot-list">
+    {{template "_honeypot_list" .}}
+  </section>
+
+  {{/* Alert Rules */}}
+  <section class="panel panel-wide" id="alert-rules">
+    {{template "_alert_rules" .}}
+  </section>
+
+  {{/* Alert Log — polls every 30s */}}
+  <section class="panel panel-wide" id="alert-log"
+    hx-get="/partials/alert-log" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_alert_log" .}}
+  </section>
+
+  {{/* Anomalies — polls every 30s */}}
+  <section class="panel panel-wide" id="anomalies"
+    hx-get="/partials/anomalies" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_anomalies" .}}
   </section>
 
   {{/* App Errors — polls every 30s */}}

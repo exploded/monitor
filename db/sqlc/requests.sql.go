@@ -64,8 +64,8 @@ func (q *Queries) DeleteRequestsBefore(ctx context.Context, ts time.Time) error 
 }
 
 const insertRequest = `-- name: InsertRequest :exec
-INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertRequestParams struct {
@@ -79,6 +79,8 @@ type InsertRequestParams struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
+	Country    string    `json:"country"`
+	City       string    `json:"city"`
 }
 
 func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) error {
@@ -93,6 +95,8 @@ func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) er
 		arg.UserAgent,
 		arg.DurationMs,
 		arg.IsBot,
+		arg.Country,
+		arg.City,
 	)
 	return err
 }
@@ -102,15 +106,29 @@ SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_
 FROM requests ORDER BY id DESC LIMIT ?
 `
 
-func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]Request, error) {
+type RecentRequestsRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+}
+
+func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]RecentRequestsRow, error) {
 	rows, err := q.db.QueryContext(ctx, recentRequests, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Request
+	var items []RecentRequestsRow
 	for rows.Next() {
-		var i Request
+		var i RecentRequestsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Ts,

@@ -12,10 +12,14 @@ import (
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/alerts"
+	"github.com/exploded/monitor/internal/anomaly"
 	"github.com/exploded/monitor/internal/caddy"
 	"github.com/exploded/monitor/internal/config"
 	"github.com/exploded/monitor/internal/database"
+	"github.com/exploded/monitor/internal/geoip"
 	"github.com/exploded/monitor/internal/handlers"
+	"github.com/exploded/monitor/internal/uptime"
 	"github.com/exploded/monitor/internal/watcher"
 )
 
@@ -80,7 +84,26 @@ func main() {
 	autoBlocker.Load(abRules)
 	slog.Info("autoblocker loaded", "rules", len(abRules))
 
-	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, caddyClient, &cfg)
+	// Honeypot checker (blocks IPs by honeypot path patterns)
+	honeypotChecker := watcher.NewHoneypotChecker(q, caddyClient)
+	hpRules, err := q.ListEnabledHoneypots(context.Background())
+	if err != nil {
+		slog.Error("load honeypot rules", "err", err)
+		os.Exit(1)
+	}
+	honeypotChecker.Load(hpRules)
+	slog.Info("honeypot checker loaded", "rules", len(hpRules))
+
+	// GeoIP resolver (graceful degradation if .mmdb not found)
+	geoResolver, _ := geoip.New(cfg.GeoIPDBPath)
+	if geoResolver != nil {
+		defer geoResolver.Close()
+	}
+
+	// Alert engine
+	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
+
+	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, honeypotChecker, alertEngine, caddyClient, &cfg)
 
 	// Sync blocked IPs and UAs to Caddy on startup
 	if caddyClient != nil {
@@ -118,7 +141,7 @@ func main() {
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
-		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, rowTmpl)
+		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, honeypotChecker, geoResolver, rowTmpl)
 		go func() {
 			if err := w.Run(ctx); err != nil && err != context.Canceled {
 				slog.Error("watcher stopped", "err", err)
@@ -144,6 +167,20 @@ func main() {
 			}
 		}
 	}()
+
+	// Start alert engine
+	go alertEngine.Run(ctx)
+	slog.Info("alert engine started")
+
+	// Start uptime monitor
+	uptimeMonitor := uptime.New(q, alertEngine)
+	go uptimeMonitor.Run(ctx)
+	slog.Info("uptime monitor started")
+
+	// Start anomaly detector
+	anomalyDetector := anomaly.New(q, alertEngine)
+	go anomalyDetector.Run(ctx)
+	slog.Info("anomaly detector started")
 
 	// Routes
 	mux := http.NewServeMux()
@@ -185,11 +222,37 @@ func main() {
 	mux.HandleFunc("POST /autoblock/{id}/toggle", h.ToggleAutoblockRule)
 	mux.HandleFunc("POST /autoblock/{id}/delete", h.DeleteAutoblockRule)
 
+	// Alerts
+	mux.HandleFunc("GET /alerts", h.ListAlertRules)
+	mux.HandleFunc("POST /alerts", h.CreateAlertRule)
+	mux.HandleFunc("POST /alerts/{id}/toggle", h.ToggleAlertRule)
+	mux.HandleFunc("POST /alerts/{id}/delete", h.DeleteAlertRule)
+	mux.HandleFunc("GET /partials/alert-log", h.AlertLogPanel)
+
+	// Honeypots
+	mux.HandleFunc("GET /honeypots", h.ListHoneypots)
+	mux.HandleFunc("POST /honeypots", h.CreateHoneypot)
+	mux.HandleFunc("POST /honeypots/{id}/toggle", h.ToggleHoneypot)
+	mux.HandleFunc("POST /honeypots/{id}/delete", h.DeleteHoneypot)
+
 	// History
 	mux.HandleFunc("GET /history", h.History)
 	mux.HandleFunc("GET /partials/hourly", h.HourlyChart)
 	mux.HandleFunc("GET /partials/daily", h.DailySummary)
+	mux.HandleFunc("GET /partials/latency", h.LatencyChart)
+	mux.HandleFunc("GET /partials/bandwidth", h.BandwidthChart)
 	mux.HandleFunc("GET /search", h.Search)
+	mux.HandleFunc("GET /export/search", h.ExportSearch)
+
+	// Uptime
+	mux.HandleFunc("GET /uptime", h.Uptime)
+	mux.HandleFunc("POST /uptime", h.CreateUptimeTarget)
+	mux.HandleFunc("POST /uptime/{id}/toggle", h.ToggleUptimeTarget)
+	mux.HandleFunc("POST /uptime/{id}/delete", h.DeleteUptimeTarget)
+
+	// Anomalies
+	mux.HandleFunc("GET /partials/anomalies", h.AnomaliesPanel)
+	mux.HandleFunc("POST /anomalies/{id}/acknowledge", h.AcknowledgeAnomaly)
 
 	// App logs (API — uses API key, not basic auth)
 	mux.HandleFunc("POST /api/logs", h.IngestAppLogs)

@@ -1,0 +1,53 @@
+{{define "_alert_rules"}}
+<h2>Alert Rules</h2>
+
+<form hx-post="/alerts" hx-target="#alert-rules" hx-swap="innerHTML" class="inline-form">
+  <input type="text" name="name" placeholder="Name" required>
+  <select name="type">
+    <option value="5xx_spike">5xx Spike</option>
+    <option value="traffic_surge">Traffic Surge</option>
+    <option value="app_error">App Error</option>
+    <option value="auto_block">Auto-Block</option>
+  </select>
+  <input type="number" name="threshold" placeholder="Threshold" value="5" min="1" style="width:80px">
+  <input type="number" name="window_minutes" placeholder="Window (min)" value="5" min="1" style="width:100px">
+  <input type="number" name="cooldown_minutes" placeholder="Cooldown (min)" value="15" min="1" style="width:110px">
+  <button type="submit" class="btn btn-primary">Add</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Type</th>
+      <th>Threshold</th>
+      <th>Window</th>
+      <th>Cooldown</th>
+      <th>Last Fired</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.AlertRules}}
+    <tr>
+      <td>{{.Name}}</td>
+      <td><code>{{.Type}}</code></td>
+      <td>{{.Threshold}}</td>
+      <td>{{.WindowMinutes}}m</td>
+      <td>{{.CooldownMinutes}}m</td>
+      <td>{{if .LastFiredAt.Valid}}{{formatDateTime .LastFiredAt.Time}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>
+        <button class="btn-sm{{if eq .Enabled 1}} btn-block{{else}} btn-muted{{end}}"
+          hx-post="/alerts/{{.ID}}/toggle" hx-target="#alert-rules" hx-swap="innerHTML">
+          {{if eq .Enabled 1}}Enabled{{else}}Disabled{{end}}
+        </button>
+      </td>
+      <td>
+        <button class="btn-sm btn-danger" hx-post="/alerts/{{.ID}}/delete" hx-target="#alert-rules" hx-swap="innerHTML" hx-confirm="Delete alert rule '{{.Name}}'?">Delete</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

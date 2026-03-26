@@ -1,0 +1,37 @@
+{{define "_anomalies"}}
+<h2>Anomaly Detection</h2>
+{{if .Extra.Anomalies}}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Type</th>
+      <th>IP</th>
+      <th>Description</th>
+      <th>Score</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.Anomalies}}
+    <tr{{if eq .Acknowledged 1}} class="bot-row"{{end}}>
+      <td>{{formatDateTime .Ts}}</td>
+      <td><code>{{.Type}}</code></td>
+      <td>{{if .ClientIp}}{{.ClientIp}}{{else}}—{{end}}</td>
+      <td title="{{.Description}}">{{truncate .Description 60}}</td>
+      <td>{{printf "%.0f" .Score}}</td>
+      <td>
+        {{if eq .Acknowledged 0}}
+        <button class="btn-sm btn-muted" hx-post="/anomalies/{{.ID}}/acknowledge" hx-target="#anomalies" hx-swap="innerHTML">Ack</button>
+        {{else}}
+        <span class="muted">acked</span>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No anomalies detected.</p>
+{{end}}
+{{end}}

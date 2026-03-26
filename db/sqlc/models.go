@@ -9,6 +9,39 @@ import (
 	"time"
 )
 
+type AlertLog struct {
+	ID        int64     `json:"id"`
+	RuleID    int64     `json:"rule_id"`
+	Type      string    `json:"type"`
+	Message   string    `json:"message"`
+	Details   string    `json:"details"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type AlertRule struct {
+	ID              int64        `json:"id"`
+	Name            string       `json:"name"`
+	Type            string       `json:"type"`
+	Enabled         int64        `json:"enabled"`
+	Threshold       int64        `json:"threshold"`
+	WindowMinutes   int64        `json:"window_minutes"`
+	CooldownMinutes int64        `json:"cooldown_minutes"`
+	LastFiredAt     sql.NullTime `json:"last_fired_at"`
+	CreatedAt       time.Time    `json:"created_at"`
+}
+
+type Anomaly struct {
+	ID           int64     `json:"id"`
+	Ts           time.Time `json:"ts"`
+	Type         string    `json:"type"`
+	ClientIp     string    `json:"client_ip"`
+	Host         string    `json:"host"`
+	Description  string    `json:"description"`
+	Score        float64   `json:"score"`
+	Acknowledged int64     `json:"acknowledged"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
 type AppLog struct {
 	ID        int64     `json:"id"`
 	Ts        time.Time `json:"ts"`
@@ -45,6 +78,16 @@ type BotPattern struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type Honeypot struct {
+	ID          int64        `json:"id"`
+	Path        string       `json:"path"`
+	Description string       `json:"description"`
+	Enabled     int64        `json:"enabled"`
+	HitCount    int64        `json:"hit_count"`
+	LastHitAt   sql.NullTime `json:"last_hit_at"`
+	CreatedAt   time.Time    `json:"created_at"`
+}
+
 type Request struct {
 	ID         int64     `json:"id"`
 	Ts         time.Time `json:"ts"`
@@ -57,4 +100,26 @@ type Request struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
+	Country    string    `json:"country"`
+	City       string    `json:"city"`
+}
+
+type UptimeCheck struct {
+	ID             int64     `json:"id"`
+	TargetID       int64     `json:"target_id"`
+	Ts             time.Time `json:"ts"`
+	Status         int64     `json:"status"`
+	ResponseTimeMs float64   `json:"response_time_ms"`
+	Error          string    `json:"error"`
+	CreatedAt      time.Time `json:"created_at"`
+}
+
+type UptimeTarget struct {
+	ID              int64     `json:"id"`
+	Name            string    `json:"name"`
+	Url             string    `json:"url"`
+	IntervalSeconds int64     `json:"interval_seconds"`
+	ExpectedStatus  int64     `json:"expected_status"`
+	Enabled         int64     `json:"enabled"`
+	CreatedAt       time.Time `json:"created_at"`
 }

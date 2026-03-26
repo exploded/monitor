@@ -1,0 +1,27 @@
+{{define "_geo_map"}}
+<h2>Traffic by Country <small>(last 24h)</small></h2>
+{{if .Extra.TopCountries}}
+<div class="tables-row">
+  <div class="mini-table">
+    <table>
+      <thead><tr><th>Country</th><th>Requests</th><th>Share</th></tr></thead>
+      <tbody>
+        {{$total := .Extra.Total}}
+        {{range .Extra.TopCountries}}
+        <tr>
+          <td><strong>{{.Country}}</strong></td>
+          <td>{{.Cnt}}</td>
+          <td>
+            <div class="bar-inline" style="width:{{divFloat .Cnt $total}}%"></div>
+            {{printf "%.1f" (divFloat .Cnt $total)}}%
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{else}}
+<p class="muted">No GeoIP data available. Ensure GeoLite2-City.mmdb is configured.</p>
+{{end}}
+{{end}}

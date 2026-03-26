@@ -1,0 +1,25 @@
+{{define "_alert_log"}}
+<h2>Recent Alerts</h2>
+{{if .Extra.AlertLogs}}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Time</th>
+      <th>Type</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.AlertLogs}}
+    <tr>
+      <td>{{formatDateTime .CreatedAt}}</td>
+      <td><code>{{.Type}}</code></td>
+      <td>{{truncate .Message 80}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p class="muted">No alerts yet.</p>
+{{end}}
+{{end}}

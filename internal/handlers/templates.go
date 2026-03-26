@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/exploded/monitor/internal/reputation"
 )
 
 // PageTemplates maps page names to their cloned template set.
@@ -68,6 +71,14 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 			return http.StatusText(int(status))
 		},
 		"multiply": func(a, b int) int { return a * b },
+		"toInt64": func(f float64) int64 { return int64(f) },
+		"threatBadge": func(score int) template.HTML {
+			cls := reputation.BadgeClass(score)
+			if cls == "" {
+				return ""
+			}
+			return template.HTML(`<span class="threat-badge ` + cls + `">` + strconv.Itoa(score) + `</span>`)
+		},
 		"divFloat": func(a, b int64) float64 {
 			if b == 0 {
 				return 0

@@ -6,6 +6,16 @@
   {{template "_hourly_chart" .}}
 </section>
 
+{{/* Latency Percentiles */}}
+<section class="panel panel-wide" id="latency-chart">
+  {{template "_latency_chart" .}}
+</section>
+
+{{/* Bandwidth */}}
+<section class="panel panel-wide" id="bandwidth-chart">
+  {{template "_bandwidth_chart" .}}
+</section>
+
 {{/* Daily Summary */}}
 <section class="panel panel-wide" id="daily-summary">
   {{template "_daily_summary" .}}
@@ -14,7 +24,7 @@
 {{/* Search */}}
 <section class="panel panel-wide">
   <h2>Search</h2>
-  <form hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
+  <form id="search-form" hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
     <input type="text" name="host" placeholder="Host">
     <input type="text" name="ip" placeholder="IP">
     <input type="text" name="ua" placeholder="User Agent">
@@ -28,7 +38,18 @@
     <input type="date" name="from">
     <input type="date" name="to">
     <button type="submit" class="btn btn-primary">Search</button>
+    <button type="button" class="btn btn-secondary" onclick="exportResults('csv')">Export CSV</button>
+    <button type="button" class="btn btn-secondary" onclick="exportResults('json')">Export JSON</button>
   </form>
   <div id="search-results"></div>
 </section>
+
+<script>
+function exportResults(format) {
+  var f = document.getElementById('search-form');
+  var params = new URLSearchParams(new FormData(f));
+  params.set('format', format);
+  window.location.href = '/export/search?' + params.toString();
+}
+</script>
 {{end}}

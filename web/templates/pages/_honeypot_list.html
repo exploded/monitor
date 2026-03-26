@@ -1,0 +1,41 @@
+{{define "_honeypot_list"}}
+<h2>Honeypots <small>fake paths that auto-block visitors</small></h2>
+
+<form hx-post="/honeypots" hx-target="#honeypot-list" hx-swap="innerHTML" class="inline-form">
+  <input type="text" name="path" placeholder="Path (e.g. /admin/login)" required>
+  <input type="text" name="description" placeholder="Description">
+  <button type="submit" class="btn btn-primary">Add</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Path</th>
+      <th>Description</th>
+      <th>Hits</th>
+      <th>Last Hit</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.Honeypots}}
+    <tr>
+      <td><code>{{.Path}}</code></td>
+      <td>{{.Description}}</td>
+      <td>{{.HitCount}}</td>
+      <td>{{if .LastHitAt.Valid}}{{formatDateTime .LastHitAt.Time}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>
+        <button class="btn-sm{{if eq .Enabled 1}} btn-block{{else}} btn-muted{{end}}"
+          hx-post="/honeypots/{{.ID}}/toggle" hx-target="#honeypot-list" hx-swap="innerHTML">
+          {{if eq .Enabled 1}}Enabled{{else}}Disabled{{end}}
+        </button>
+      </td>
+      <td>
+        <button class="btn-sm btn-danger" hx-post="/honeypots/{{.ID}}/delete" hx-target="#honeypot-list" hx-swap="innerHTML" hx-confirm="Delete honeypot '{{.Path}}'?">Delete</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
