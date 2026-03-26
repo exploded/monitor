@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"html/template"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,6 +63,9 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 				m[key] = pairs[i+1]
 			}
 			return m
+		},
+		"statusText": func(status int64) string {
+			return http.StatusText(int(status))
 		},
 		"multiply": func(a, b int) int { return a * b },
 		"divFloat": func(a, b int64) float64 {

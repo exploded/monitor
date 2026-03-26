@@ -76,7 +76,7 @@
       <tbody>
         {{range .Extra.StatusCodes}}
         <tr class="{{statusClass .Status}}">
-          <td>{{.Status}}</td>
+          <td title="{{statusText .Status}}">{{.Status}}</td>
           <td>{{.Cnt}}</td>
         </tr>
         {{end}}

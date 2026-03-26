@@ -255,6 +255,9 @@ func loadRowTemplate() (*template.Template, error) {
 			}
 			return s[:n] + "..."
 		},
+		"statusText": func(status int64) string {
+			return http.StatusText(int(status))
+		},
 	}
 
 	path := filepath.Join("web", "templates", "pages", "_live_log_row.html")

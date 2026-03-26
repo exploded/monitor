@@ -23,7 +23,7 @@
         <td>{{.ClientIp}}</td>
         <td>{{.Method}}</td>
         <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
-        <td>{{.Status}}</td>
+        <td title="{{statusText .Status}}">{{.Status}}</td>
         <td>{{humanSize .Size}}</td>
         <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
         <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
