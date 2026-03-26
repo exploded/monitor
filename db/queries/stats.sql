@@ -27,7 +27,9 @@ SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
-  AND (sqlc.arg(status_filter) = 0 OR status = sqlc.arg(status_filter))
+  AND (sqlc.arg(status_filter) = 0
+       OR (sqlc.arg(status_filter) < 10 AND status / 100 = sqlc.arg(status_filter))
+       OR (sqlc.arg(status_filter) >= 10 AND status = sqlc.arg(status_filter)))
   AND (sqlc.arg(ua_filter) = '' OR user_agent LIKE '%' || sqlc.arg(ua_filter) || '%')
   AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
 ORDER BY id DESC

@@ -18,7 +18,13 @@
     <input type="text" name="host" placeholder="Host">
     <input type="text" name="ip" placeholder="IP">
     <input type="text" name="ua" placeholder="User Agent">
-    <input type="number" name="status" placeholder="Status">
+    <select name="status">
+      <option value="">Any Status</option>
+      <option value="2">2xx OK</option>
+      <option value="3">3xx Redirect</option>
+      <option value="4">4xx Client Error</option>
+      <option value="5">5xx Server Error</option>
+    </select>
     <input type="date" name="from">
     <input type="date" name="to">
     <button type="submit" class="btn btn-primary">Search</button>

@@ -143,7 +143,9 @@ SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
-  AND (?3 = 0 OR status = ?3)
+  AND (?3 = 0
+       OR (?3 < 10 AND status / 100 = ?3)
+       OR (?3 >= 10 AND status = ?3))
   AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
   AND ts >= ?5 AND ts <= ?6
 ORDER BY id DESC
