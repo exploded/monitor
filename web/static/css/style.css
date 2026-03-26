@@ -173,6 +173,7 @@ tr:hover { background: var(--surface-hover); }
 }
 .btn-block { background: var(--danger); }
 .btn-block:hover { background: var(--danger-hover); }
+.btn-blocked { background: var(--grey); cursor: default; opacity: 0.7; }
 .btn-muted { background: var(--grey); }
 .btn-muted:hover { background: #6a6e7a; }
 
