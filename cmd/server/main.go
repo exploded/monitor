@@ -112,6 +112,11 @@ func main() {
 	mux.Handle("GET /static/", http.StripPrefix("/static/",
 		http.FileServer(http.Dir("web/static"))))
 
+	// Favicon redirect (browsers request /favicon.ico at root)
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/favicon.ico", http.StatusMovedPermanently)
+	})
+
 	// Health check (no auth)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
