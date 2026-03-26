@@ -140,6 +140,10 @@ func main() {
 	mux.HandleFunc("GET /partials/daily", h.DailySummary)
 	mux.HandleFunc("GET /search", h.Search)
 
+	// App logs (API — uses API key, not basic auth)
+	mux.HandleFunc("POST /api/logs", h.IngestAppLogs)
+	mux.HandleFunc("GET /partials/app-errors", h.AppErrorsPanel)
+
 	// Middleware stack
 	var handler http.Handler = mux
 	if cfg.AuthUser != "" && cfg.AuthPass != "" {

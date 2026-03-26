@@ -15,6 +15,7 @@ type Config struct {
 	AuthUser      string
 	AuthPass      string
 	RetentionDays int
+	LogAPIKey     string
 }
 
 func Load() Config {
@@ -33,6 +34,7 @@ func Load() Config {
 		AuthUser:      envOr("AUTH_USER", "admin"),
 		AuthPass:      os.Getenv("AUTH_PASS"),
 		RetentionDays: retention,
+		LogAPIKey:     os.Getenv("LOG_API_KEY"),
 	}
 }
 

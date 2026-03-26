@@ -8,6 +8,17 @@ import (
 	"time"
 )
 
+type AppLog struct {
+	ID        int64     `json:"id"`
+	Ts        time.Time `json:"ts"`
+	App       string    `json:"app"`
+	Level     string    `json:"level"`
+	Message   string    `json:"message"`
+	Attrs     string    `json:"attrs"`
+	Source    string    `json:"source"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type BlockedIp struct {
 	ID        int64     `json:"id"`
 	Ip        string    `json:"ip"`

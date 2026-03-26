@@ -34,11 +34,12 @@
   <div class="mini-table">
     <h3>Top IPs</h3>
     <table>
+      <colgroup><col style="width:60%"><col style="width:20%"><col style="width:20%"></colgroup>
       <thead><tr><th>IP</th><th>Requests</th><th></th></tr></thead>
       <tbody>
         {{range .Extra.TopIPs}}
         <tr>
-          <td>{{.ClientIp}}</td>
+          <td class="ip-cell" title="{{.ClientIp}}">{{.ClientIp}}</td>
           <td>{{.Cnt}}</td>
           <td>
             <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from top IPs"}' hx-target="#ip-list" hx-swap="innerHTML">Block</button>
@@ -53,6 +54,7 @@
   <div class="mini-table">
     <h3>Top User Agents</h3>
     <table>
+      <colgroup><col style="width:70%"><col style="width:15%"><col style="width:15%"></colgroup>
       <thead><tr><th>User Agent</th><th>Requests</th><th>Bot</th></tr></thead>
       <tbody>
         {{range .Extra.TopUAs}}

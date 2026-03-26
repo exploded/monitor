@@ -12,7 +12,7 @@ import (
 func BasicAuth(next http.Handler, user, pass string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Skip auth for health check and static files
-		if r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/static/") {
+		if r.URL.Path == "/health" || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}

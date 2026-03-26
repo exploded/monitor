@@ -28,20 +28,26 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	recent, _ := h.q.RecentRequests(ctx, 50)
 	botPatterns, _ := h.q.ListBotPatterns(ctx)
 	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
+	appErrors, _ := h.q.RecentAppErrors(ctx, 20)
+	appErrorCount, _ := h.q.CountAppErrorsSince(ctx, since)
+	appLogCount, _ := h.q.CountAppLogsSince(ctx, since)
 
 	h.render(w, r, "dashboard", "", PageData{
 		Title: "Dashboard",
 		Extra: map[string]any{
-			"Total":       total,
-			"Bots":        bots,
-			"UniqueIPs":   uniqueIPs,
-			"TopIPs":      topIPs,
-			"TopUAs":      topUAs,
-			"ByHost":      byHost,
-			"StatusCodes": statusCodes,
-			"Recent":      recent,
-			"BotPatterns": botPatterns,
-			"BlockedIPs":  blockedIPs,
+			"Total":         total,
+			"Bots":          bots,
+			"UniqueIPs":     uniqueIPs,
+			"TopIPs":        topIPs,
+			"TopUAs":        topUAs,
+			"ByHost":        byHost,
+			"StatusCodes":   statusCodes,
+			"Recent":        recent,
+			"BotPatterns":   botPatterns,
+			"BlockedIPs":    blockedIPs,
+			"AppErrors":     appErrors,
+			"AppErrorCount": appErrorCount,
+			"AppLogCount":   appLogCount,
 		},
 	})
 }

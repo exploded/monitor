@@ -1,0 +1,31 @@
+{{define "_app_errors"}}
+<h2>App Logs <small>({{.Extra.AppErrorCount}} errors / {{.Extra.AppLogCount}} total, last 24h)</small></h2>
+{{if .Extra.AppErrors}}
+<div class="table-wrap">
+  <table class="data-table log-table">
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>App</th>
+        <th>Level</th>
+        <th>Message</th>
+        <th>Source</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Extra.AppErrors}}
+      <tr class="{{if eq .Level "ERROR"}}app-log-error{{else}}app-log-warn{{end}}">
+        <td>{{formatTime .Ts}}</td>
+        <td><code>{{.App}}</code></td>
+        <td>{{.Level}}</td>
+        <td class="ua-cell" title="{{.Message}}">{{truncate .Message 80}}</td>
+        <td class="ua-cell" title="{{.Source}}">{{truncate .Source 40}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No recent errors or warnings.</p>
+{{end}}
+{{end}}

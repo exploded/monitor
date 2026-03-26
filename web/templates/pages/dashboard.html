@@ -54,5 +54,11 @@
   <section class="panel" id="ip-list">
     {{template "_ip_list" .}}
   </section>
+
+  {{/* App Errors — polls every 30s */}}
+  <section class="panel panel-wide" id="app-errors"
+    hx-get="/partials/app-errors" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_app_errors" .}}
+  </section>
 </div>
 {{end}}

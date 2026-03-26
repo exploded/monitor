@@ -57,3 +57,18 @@ INSERT OR IGNORE INTO bot_patterns (pattern, label, block) VALUES
     ('SERankingBot', 'SE Ranking', 1),
     ('CensysInspect', 'Censys', 1),
     ('Wget', 'Wget', 0);
+
+CREATE TABLE IF NOT EXISTS app_logs (
+    id          INTEGER PRIMARY KEY,
+    ts          DATETIME NOT NULL,
+    app         TEXT NOT NULL,
+    level       TEXT NOT NULL,
+    message     TEXT NOT NULL,
+    attrs       TEXT NOT NULL DEFAULT '{}',
+    source      TEXT NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_logs_ts ON app_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_app_logs_app ON app_logs(app);
+CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);

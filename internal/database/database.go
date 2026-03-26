@@ -44,5 +44,8 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 // Prune deletes requests older than the given number of days.
 func Prune(ctx context.Context, q *db.Queries, retentionDays int) error {
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
-	return q.DeleteRequestsBefore(ctx, cutoff)
+	if err := q.DeleteRequestsBefore(ctx, cutoff); err != nil {
+		return err
+	}
+	return q.DeleteAppLogsBefore(ctx, cutoff)
 }

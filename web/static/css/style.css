@@ -104,8 +104,15 @@ code { font-family: var(--mono); font-size: 0.9em; }
 /* ===== Tables ===== */
 .tables-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
+}
+.mini-table {
+  overflow: hidden;
+}
+.mini-table table {
+  table-layout: fixed;
+  width: 100%;
 }
 .mini-table h3 {
   font-size: 0.85rem;
@@ -130,8 +137,12 @@ tr:hover { background: var(--surface-hover); }
 .status-5xx td:nth-child(6) { color: var(--red); }
 .bot-row { opacity: 0.55; }
 
+/* ===== App Log Level Colors ===== */
+.app-log-error td:nth-child(3) { color: var(--red); font-weight: 600; }
+.app-log-warn td:nth-child(3) { color: var(--amber); }
+
 /* ===== Cell truncation ===== */
-.uri-cell, .ua-cell { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uri-cell, .ua-cell, .ip-cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ===== Buttons ===== */
 .btn {
