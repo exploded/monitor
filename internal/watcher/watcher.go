@@ -39,25 +39,27 @@ type CaddyLogEntry struct {
 // Watcher tails a Caddy access log file, parses JSON entries,
 // and writes them to SQLite while broadcasting to SSE clients.
 type Watcher struct {
-	logPath  string
-	rawDB    *sql.DB
-	q        *db.Queries
-	hub      Broadcaster
-	matcher  *BotMatcher
-	rowTmpl  *template.Template
-	ingestCh chan db.InsertRequestParams
+	logPath     string
+	rawDB       *sql.DB
+	q           *db.Queries
+	hub         Broadcaster
+	matcher     *BotMatcher
+	autoBlocker *AutoBlocker
+	rowTmpl     *template.Template
+	ingestCh    chan db.InsertRequestParams
 }
 
 // New creates a Watcher. The rowTmpl is used to render live log HTML for SSE.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, rowTmpl *template.Template) *Watcher {
+func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, rowTmpl *template.Template) *Watcher {
 	return &Watcher{
-		logPath:  logPath,
-		rawDB:    rawDB,
-		q:        q,
-		hub:      hub,
-		matcher:  matcher,
-		rowTmpl:  rowTmpl,
-		ingestCh: make(chan db.InsertRequestParams, 256),
+		logPath:     logPath,
+		rawDB:       rawDB,
+		q:           q,
+		hub:         hub,
+		matcher:     matcher,
+		autoBlocker: autoBlocker,
+		rowTmpl:     rowTmpl,
+		ingestCh:    make(chan db.InsertRequestParams, 256),
 	}
 }
 
@@ -144,6 +146,11 @@ func (w *Watcher) processLine(line []byte) {
 	var isBotInt int64
 	if isBot {
 		isBotInt = 1
+	}
+
+	// Check auto-block rules against the URI
+	if w.autoBlocker != nil {
+		w.autoBlocker.Check(entry.Request.URI, entry.Request.ClientIP)
 	}
 
 	params := db.InsertRequestParams{

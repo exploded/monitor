@@ -13,25 +13,27 @@ import (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	q       *db.Queries
-	rawDB   *sql.DB
-	pages   PageTemplates
-	hub     *Hub
-	matcher *watcher.BotMatcher
-	caddy   *caddy.Client
-	cfg     *config.Config
+	q           *db.Queries
+	rawDB       *sql.DB
+	pages       PageTemplates
+	hub         *Hub
+	matcher     *watcher.BotMatcher
+	autoBlocker *watcher.AutoBlocker
+	caddy       *caddy.Client
+	cfg         *config.Config
 }
 
 // New creates a Handler with all dependencies.
-func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, hub *Hub, matcher *watcher.BotMatcher, caddyClient *caddy.Client, cfg *config.Config) *Handler {
+func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, hub *Hub, matcher *watcher.BotMatcher, autoBlocker *watcher.AutoBlocker, caddyClient *caddy.Client, cfg *config.Config) *Handler {
 	return &Handler{
-		q:       q,
-		rawDB:   rawDB,
-		pages:   pages,
-		hub:     hub,
-		matcher: matcher,
-		caddy:   caddyClient,
-		cfg:     cfg,
+		q:           q,
+		rawDB:       rawDB,
+		pages:       pages,
+		hub:         hub,
+		matcher:     matcher,
+		autoBlocker: autoBlocker,
+		caddy:       caddyClient,
+		cfg:         cfg,
 	}
 }
 

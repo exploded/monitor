@@ -70,7 +70,47 @@ func main() {
 	// Caddy admin API client
 	caddyClient := caddy.New(cfg.CaddyAdminURL)
 
-	h := handlers.New(sqlDB, q, pages, hub, matcher, caddyClient, &cfg)
+	// Auto-blocker (blocks IPs by request path patterns)
+	autoBlocker := watcher.NewAutoBlocker(q, caddyClient)
+	abRules, err := q.ListEnabledAutoblockRules(context.Background())
+	if err != nil {
+		slog.Error("load autoblock rules", "err", err)
+		os.Exit(1)
+	}
+	autoBlocker.Load(abRules)
+	slog.Info("autoblocker loaded", "rules", len(abRules))
+
+	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, caddyClient, &cfg)
+
+	// Sync blocked IPs and UAs to Caddy on startup
+	if caddyClient != nil {
+		blockedIPs, _ := q.ListBlockedIPs(context.Background())
+		if len(blockedIPs) > 0 {
+			ips := make([]string, len(blockedIPs))
+			for i, ip := range blockedIPs {
+				ips[i] = ip.Ip
+			}
+			if err := caddyClient.SyncBlockedIPs(ips); err != nil {
+				slog.Warn("startup sync blocked IPs to caddy", "err", err)
+			} else {
+				slog.Info("synced blocked IPs to caddy", "count", len(ips))
+			}
+		}
+
+		var blockedUAs []string
+		for _, p := range botPatterns {
+			if p.Block == 1 {
+				blockedUAs = append(blockedUAs, p.Pattern)
+			}
+		}
+		if len(blockedUAs) > 0 {
+			if err := caddyClient.SyncBlockedUAs(blockedUAs); err != nil {
+				slog.Warn("startup sync blocked UAs to caddy", "err", err)
+			} else {
+				slog.Info("synced blocked UAs to caddy", "count", len(blockedUAs))
+			}
+		}
+	}
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -78,7 +118,7 @@ func main() {
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
-		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, rowTmpl)
+		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, rowTmpl)
 		go func() {
 			if err := w.Run(ctx); err != nil && err != context.Canceled {
 				slog.Error("watcher stopped", "err", err)
@@ -138,6 +178,12 @@ func main() {
 	mux.HandleFunc("GET /ips", h.ListBlockedIPs)
 	mux.HandleFunc("POST /ips", h.BlockIP)
 	mux.HandleFunc("POST /ips/{id}/delete", h.UnblockIP)
+
+	// Auto-block rules
+	mux.HandleFunc("GET /autoblock", h.ListAutoblockRules)
+	mux.HandleFunc("POST /autoblock", h.CreateAutoblockRule)
+	mux.HandleFunc("POST /autoblock/{id}/toggle", h.ToggleAutoblockRule)
+	mux.HandleFunc("POST /autoblock/{id}/delete", h.DeleteAutoblockRule)
 
 	// History
 	mux.HandleFunc("GET /history", h.History)

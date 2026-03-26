@@ -55,6 +55,11 @@
     {{template "_ip_list" .}}
   </section>
 
+  {{/* Auto-Block Rules */}}
+  <section class="panel panel-wide" id="autoblock-list">
+    {{template "_autoblock_list" .}}
+  </section>
+
   {{/* App Errors — polls every 30s */}}
   <section class="panel panel-wide" id="app-errors"
     hx-get="/partials/app-errors" hx-trigger="every 30s" hx-swap="innerHTML">

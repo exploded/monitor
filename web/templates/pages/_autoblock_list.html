@@ -1,0 +1,41 @@
+{{define "_autoblock_list"}}
+<h2>Auto-Block Rules <small>block IPs by request path</small></h2>
+
+<form hx-post="/autoblock" hx-target="#autoblock-list" hx-swap="innerHTML" class="inline-form">
+  <input type="text" name="pattern" placeholder="URI pattern (e.g. /wp-admin)" required>
+  <input type="text" name="description" placeholder="Description">
+  <button type="submit" class="btn btn-primary">Add</button>
+</form>
+
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Pattern</th>
+      <th>Description</th>
+      <th>Hits</th>
+      <th>Last Hit</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Extra.AutoblockRules}}
+    <tr>
+      <td><code>{{.Pattern}}</code></td>
+      <td>{{.Description}}</td>
+      <td>{{.HitCount}}</td>
+      <td>{{if .LastHitAt.Valid}}{{formatDateTime .LastHitAt.Time}}{{else}}<span class="muted">never</span>{{end}}</td>
+      <td>
+        <button class="btn-sm{{if eq .Enabled 1}} btn-block{{else}} btn-muted{{end}}"
+          hx-post="/autoblock/{{.ID}}/toggle" hx-target="#autoblock-list" hx-swap="innerHTML">
+          {{if eq .Enabled 1}}Enabled{{else}}Disabled{{end}}
+        </button>
+      </td>
+      <td>
+        <button class="btn-sm btn-danger" hx-post="/autoblock/{{.ID}}/delete" hx-target="#autoblock-list" hx-swap="innerHTML" hx-confirm="Delete rule '{{.Pattern}}'?">Delete</button>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

@@ -28,6 +28,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	recent, _ := h.q.RecentRequests(ctx, 50)
 	botPatterns, _ := h.q.ListBotPatterns(ctx)
 	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
+	autoblockRules, _ := h.q.ListAutoblockRules(ctx)
 	appErrors, _ := h.q.RecentAppErrors(ctx, 20)
 	appErrorCount, _ := h.q.CountAppErrorsSince(ctx, since)
 	appLogCount, _ := h.q.CountAppLogsSince(ctx, since)
@@ -44,8 +45,9 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			"StatusCodes":   statusCodes,
 			"Recent":        recent,
 			"BotPatterns":   botPatterns,
-			"BlockedIPs":    blockedIPs,
-			"AppErrors":     appErrors,
+			"BlockedIPs":      blockedIPs,
+			"AutoblockRules":  autoblockRules,
+			"AppErrors":       appErrors,
 			"AppErrorCount": appErrorCount,
 			"AppLogCount":   appLogCount,
 		},

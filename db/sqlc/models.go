@@ -5,6 +5,7 @@
 package db
 
 import (
+	"database/sql"
 	"time"
 )
 
@@ -17,6 +18,16 @@ type AppLog struct {
 	Attrs     string    `json:"attrs"`
 	Source    string    `json:"source"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type AutoblockRule struct {
+	ID          int64        `json:"id"`
+	Pattern     string       `json:"pattern"`
+	Description string       `json:"description"`
+	Enabled     int64        `json:"enabled"`
+	HitCount    int64        `json:"hit_count"`
+	LastHitAt   sql.NullTime `json:"last_hit_at"`
+	CreatedAt   time.Time    `json:"created_at"`
 }
 
 type BlockedIp struct {

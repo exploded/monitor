@@ -58,6 +58,37 @@ INSERT OR IGNORE INTO bot_patterns (pattern, label, block) VALUES
     ('CensysInspect', 'Censys', 1),
     ('Wget', 'Wget', 0);
 
+CREATE TABLE IF NOT EXISTS autoblock_rules (
+    id          INTEGER PRIMARY KEY,
+    pattern     TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    hit_count   INTEGER NOT NULL DEFAULT 0,
+    last_hit_at DATETIME,
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed common auto-block path patterns (vulnerability probes)
+INSERT OR IGNORE INTO autoblock_rules (pattern, description) VALUES
+    ('/wp-login', 'WordPress login page'),
+    ('/wp-admin', 'WordPress admin panel'),
+    ('/wp-content/', 'WordPress content directory'),
+    ('/wp-includes/', 'WordPress includes directory'),
+    ('/xmlrpc.php', 'WordPress XML-RPC'),
+    ('/wp-cron', 'WordPress cron'),
+    ('phpmyadmin', 'phpMyAdmin access attempt'),
+    ('/.env', 'Environment file exposure'),
+    ('/.git/', 'Git directory exposure'),
+    ('/cgi-bin/', 'CGI script probing'),
+    ('/.aws/', 'AWS credentials exposure'),
+    ('/.ssh/', 'SSH key exposure'),
+    ('/config.php', 'PHP config file access'),
+    ('/setup.php', 'PHP setup page'),
+    ('/install.php', 'PHP install page'),
+    ('/eval-stdin.php', 'PHP eval exploit'),
+    ('/wp-json/', 'WordPress REST API'),
+    ('/telescope/requests', 'Laravel Telescope debug tool');
+
 CREATE TABLE IF NOT EXISTS app_logs (
     id          INTEGER PRIMARY KEY,
     ts          DATETIME NOT NULL,
