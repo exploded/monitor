@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -14,19 +13,10 @@ import (
 	db "github.com/exploded/monitor/db/sqlc"
 )
 
-// timeFormat is the Go time format used by the SQLite driver for serialising
-// time.Time values.  It MUST match the strftime pattern used in the
-// normalisation migration below so that string-based comparisons (ts >= ?)
-// work correctly.  Format: "2006-01-02 15:04:05.000-07:00"
-//   – space separator (not T)
-//   – millisecond precision (.000 — always 3 digits)
-//   – numeric offset (-07:00 — prints +00:00 for UTC, never Z)
-const timeFormat = "2006-01-02 15:04:05.000-07:00"
-
 // Open opens (or creates) the SQLite database at path, applies the schema,
 // and enables WAL mode for concurrent reads.
 func Open(path, schemaPath string) (*sql.DB, error) {
-	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_time_format=" + url.QueryEscape(timeFormat)
+	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_time_format=sqlite"
 	d, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
