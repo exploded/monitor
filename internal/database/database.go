@@ -59,8 +59,17 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 		SELECT MIN(id) FROM alert_rules GROUP BY name
 	)`)
 
-	// Add UNIQUE constraint on alert_rules.name if missing (recreate via rename)
+	// Add UNIQUE constraint on alert_rules.name if missing
 	d.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_rules_name ON alert_rules(name)`)
+
+	// One-off: normalize app_logs timestamps to UTC (fixes non-UTC offset entries)
+	d.Exec(`UPDATE app_logs SET ts = strftime('%Y-%m-%d %H:%M:%f+00:00', ts)
+		WHERE ts NOT LIKE '%+00:00'`)
+
+	// One-off: remove duplicate alert_log entries (from duplicate rules firing)
+	d.Exec(`DELETE FROM alert_log WHERE id NOT IN (
+		SELECT MIN(id) FROM alert_log GROUP BY type, message, created_at
+	)`)
 
 	// Create indexes for new columns (IF NOT EXISTS is safe)
 	d.Exec("CREATE INDEX IF NOT EXISTS idx_requests_country ON requests(country)")
