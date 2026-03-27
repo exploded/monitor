@@ -68,12 +68,14 @@ echo "[ok] Created $APP_DIR"
 if [ ! -f "$APP_DIR/.env" ]; then
     cat > "$APP_DIR/.env" << 'ENVFILE'
 PORT=8989
+PROD=true
 DB_PATH=/var/www/monitor/monitor.db
 LOG_PATH=/var/log/caddy/access.log
 CADDY_ADMIN_URL=http://localhost:2019
 AUTH_USER=admin
 AUTH_PASS=CHANGE_ME_TO_A_STRONG_PASSWORD
 RETENTION_DAYS=90
+LOG_API_KEY=CHANGE_ME_TO_A_RANDOM_KEY
 ENVFILE
     chown www-data:www-data "$APP_DIR/.env"
     chmod 600 "$APP_DIR/.env"
@@ -101,6 +103,12 @@ Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
 
 [Install]
 WantedBy=multi-user.target
@@ -223,4 +231,4 @@ echo "Optional secret : DEPLOY_PORT  (only if SSH is not on port 22)"
 echo ""
 echo "IMPORTANT: Edit $APP_DIR/.env and set a strong AUTH_PASS before starting."
 echo ""
-echo "After adding secrets, push to master to trigger your first deployment."
+echo "After adding secrets, push to main to trigger your first deployment."

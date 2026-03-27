@@ -9,6 +9,7 @@ import (
 
 type Config struct {
 	Port              string
+	Prod              bool
 	DBPath            string
 	LogPath           string
 	CaddyAdminURL     string
@@ -29,8 +30,11 @@ func Load() Config {
 		retention = 90
 	}
 
+	prod := strings.EqualFold(os.Getenv("PROD"), "true")
+
 	return Config{
 		Port:          envOr("PORT", "8989"),
+		Prod:          prod,
 		DBPath:        envOr("DB_PATH", "monitor.db"),
 		LogPath:       os.Getenv("LOG_PATH"),
 		CaddyAdminURL: envOr("CADDY_ADMIN_URL", "http://localhost:2019"),

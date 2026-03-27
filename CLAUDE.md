@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Self-hosted server monitoring portal that tails Caddy JSON access logs in real-time, stores entries in SQLite, and presents a live HTMX dashboard with traffic stats, bot detection, and IP/UA blocking via Caddy's admin API. Also ingests application logs from other services via POST /api/logs.
 
 **GitHub:** `https://github.com/exploded/monitor`
-**Production:** Linode (Debian), deployed via GitHub Actions on push to `master`.
+**Production:** Linode (Debian), deployed via GitHub Actions on push to `main`.
 
 ## Build & Dev Commands
 
@@ -67,11 +67,11 @@ Config in `sqlc.yaml`. Engine: SQLite. Queries in `db/queries/*.sql`, schema in 
 
 ## Deployment
 
-Push to `master` triggers GitHub Actions: test → build static Linux binary → SCP to server → stop service → run deploy script → restart.
+Push to `main` triggers GitHub Actions: test → build static Linux binary → SCP to server → stop service → run deploy script → restart.
 
 - Binary: `/var/www/monitor/monitor`
 - Service: systemd unit `monitor` (runs as `www-data`)
-- Server setup: `curl -fsSL https://raw.githubusercontent.com/exploded/monitor/master/scripts/server-setup.sh | sudo bash`
+- Server setup: `curl -fsSL https://raw.githubusercontent.com/exploded/monitor/main/scripts/server-setup.sh | sudo bash`
 - Deploy script at `/usr/local/bin/deploy-monitor` stops service, `rm -f` binary (avoids "text file busy"), copies new one, restarts.
 
 ## Important Notes

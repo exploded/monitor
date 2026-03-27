@@ -266,7 +266,7 @@ func main() {
 	if cfg.AuthUser != "" && cfg.AuthPass != "" {
 		handler = handlers.BasicAuth(handler, cfg.AuthUser, cfg.AuthPass)
 	}
-	handler = handlers.SecurityHeaders(handler)
+	handler = handlers.SecurityHeaders(handler, cfg.Prod)
 	handler = handlers.RequestLogger(handler)
 
 	srv := &http.Server{

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -30,7 +31,7 @@ func (h *Handler) IngestAppLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "log ingestion not configured", http.StatusServiceUnavailable)
 		return
 	}
-	if r.Header.Get("X-API-Key") != h.cfg.LogAPIKey {
+	if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-API-Key")), []byte(h.cfg.LogAPIKey)) != 1 {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
