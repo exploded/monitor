@@ -1,0 +1,39 @@
+{{define "_app_log_detail"}}
+<div class="app-log-detail-inner">
+  <div class="detail-grid">
+    <div class="detail-field">
+      <span class="detail-label">Time</span>
+      <span>{{formatDateTime .Extra.Log.Ts}}</span>
+    </div>
+    <div class="detail-field">
+      <span class="detail-label">App</span>
+      <span><code>{{.Extra.Log.App}}</code></span>
+    </div>
+    <div class="detail-field">
+      <span class="detail-label">Level</span>
+      <span class="{{if eq .Extra.Log.Level "ERROR"}}text-red{{else}}text-amber{{end}}">{{.Extra.Log.Level}}</span>
+    </div>
+    <div class="detail-field">
+      <span class="detail-label">Source</span>
+      <span>{{if .Extra.Log.Source}}<code>{{.Extra.Log.Source}}</code>{{else}}<em class="muted">none</em>{{end}}</span>
+    </div>
+  </div>
+  <div class="detail-field">
+    <span class="detail-label">Message</span>
+    <pre class="detail-pre">{{.Extra.Log.Message}}</pre>
+  </div>
+  {{if .Extra.Attrs}}
+  <div class="detail-field">
+    <span class="detail-label">Attributes</span>
+    <table class="detail-attrs">
+      {{range $key, $val := .Extra.Attrs}}
+      <tr>
+        <td class="detail-attr-key"><code>{{$key}}</code></td>
+        <td class="detail-attr-val">{{$val}}</td>
+      </tr>
+      {{end}}
+    </table>
+  </div>
+  {{end}}
+</div>
+{{end}}

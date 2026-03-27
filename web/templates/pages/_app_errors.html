@@ -14,17 +14,36 @@
     </thead>
     <tbody>
       {{range .Extra.AppErrors}}
-      <tr class="{{if eq .Level "ERROR"}}app-log-error{{else}}app-log-warn{{end}}">
+      <tr class="{{if eq .Level "ERROR"}}app-log-error{{else}}app-log-warn{{end}} clickable"
+          onclick="toggleAppLogDetail(this, {{.ID}})">
         <td>{{formatTime .Ts}}</td>
         <td><code>{{.App}}</code></td>
         <td>{{.Level}}</td>
         <td class="ua-cell" title="{{.Message}}">{{truncate .Message 80}}</td>
         <td class="ua-cell" title="{{.Source}}">{{truncate .Source 40}}</td>
       </tr>
+      <tr class="app-log-detail hidden" id="app-log-detail-{{.ID}}">
+        <td colspan="5"></td>
+      </tr>
       {{end}}
     </tbody>
   </table>
 </div>
+<script>
+function toggleAppLogDetail(row, id) {
+  var detail = document.getElementById('app-log-detail-' + id);
+  var td = detail.querySelector('td');
+  if (detail.classList.contains('hidden')) {
+    detail.classList.remove('hidden');
+    if (!td.innerHTML.trim()) {
+      td.innerHTML = '<em class="muted">Loading\u2026</em>';
+      htmx.ajax('GET', '/partials/app-log/' + id, {target: td, swap: 'innerHTML'});
+    }
+  } else {
+    detail.classList.add('hidden');
+  }
+}
+</script>
 {{else}}
 <p class="muted">No recent errors or warnings.</p>
 {{end}}

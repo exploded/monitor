@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
@@ -81,6 +83,55 @@ func (h *Handler) IngestAppLogs(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(map[string]any{"accepted": len(batch.Logs)})
+}
+
+// AppLogDetail renders the detail view for a single app log entry.
+func (h *Handler) AppLogDetail(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	logEntry, err := h.q.GetAppLog(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse attrs JSON into map for display.
+	var attrs map[string]any
+	if logEntry.Attrs != "" && logEntry.Attrs != "{}" {
+		if err := json.Unmarshal([]byte(logEntry.Attrs), &attrs); err != nil {
+			slog.Warn("parse app log attrs", "id", id, "err", err)
+		}
+	}
+
+	// Stringify any non-string attr values for template display.
+	displayAttrs := make(map[string]string, len(attrs))
+	for k, v := range attrs {
+		switch val := v.(type) {
+		case string:
+			displayAttrs[k] = val
+		default:
+			displayAttrs[k] = fmt.Sprintf("%v", val)
+		}
+	}
+
+	tmpl, ok := h.pages["dashboard"]
+	if !ok {
+		http.Error(w, "template not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	data := PageData{Extra: map[string]any{
+		"Log":   logEntry,
+		"Attrs": displayAttrs,
+	}}
+	if err := tmpl.ExecuteTemplate(w, "_app_log_detail", data); err != nil {
+		slog.Error("render app log detail", "id", id, "err", err)
+	}
 }
 
 // AppErrorsPanel renders the recent app errors partial (polled by HTMX).

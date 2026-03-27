@@ -68,6 +68,28 @@ func (q *Queries) DeleteAppLogsBefore(ctx context.Context, ts time.Time) error {
 	return err
 }
 
+const getAppLog = `-- name: GetAppLog :one
+SELECT id, ts, app, level, message, attrs, source, created_at
+FROM app_logs
+WHERE id = ?
+`
+
+func (q *Queries) GetAppLog(ctx context.Context, id int64) (AppLog, error) {
+	row := q.db.QueryRowContext(ctx, getAppLog, id)
+	var i AppLog
+	err := row.Scan(
+		&i.ID,
+		&i.Ts,
+		&i.App,
+		&i.Level,
+		&i.Message,
+		&i.Attrs,
+		&i.Source,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertAppLog = `-- name: InsertAppLog :exec
 INSERT INTO app_logs (ts, app, level, message, attrs, source)
 VALUES (?, ?, ?, ?, ?, ?)

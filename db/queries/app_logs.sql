@@ -24,5 +24,10 @@ SELECT COUNT(*) FROM app_logs WHERE ts >= ?;
 -- name: AppList :many
 SELECT DISTINCT app FROM app_logs ORDER BY app;
 
+-- name: GetAppLog :one
+SELECT id, ts, app, level, message, attrs, source, created_at
+FROM app_logs
+WHERE id = ?;
+
 -- name: DeleteAppLogsBefore :exec
 DELETE FROM app_logs WHERE ts < ?;

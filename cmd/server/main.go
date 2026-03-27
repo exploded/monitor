@@ -259,6 +259,7 @@ func main() {
 	// App logs (API — uses API key, not basic auth)
 	mux.HandleFunc("POST /api/logs", h.IngestAppLogs)
 	mux.HandleFunc("GET /partials/app-errors", h.AppErrorsPanel)
+	mux.HandleFunc("GET /partials/app-log/{id}", h.AppLogDetail)
 
 	// Middleware stack
 	var handler http.Handler = mux
