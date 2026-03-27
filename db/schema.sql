@@ -130,7 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_app_logs_level ON app_logs(level);
 -- Alert rules and log
 CREATE TABLE IF NOT EXISTS alert_rules (
     id               INTEGER PRIMARY KEY,
-    name             TEXT NOT NULL,
+    name             TEXT NOT NULL UNIQUE,
     type             TEXT NOT NULL,
     enabled          INTEGER NOT NULL DEFAULT 1,
     threshold        INTEGER NOT NULL DEFAULT 0,

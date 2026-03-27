@@ -54,6 +54,14 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 		}
 	}
 
+	// Deduplicate alert_rules: keep the row with the lowest id for each name
+	d.Exec(`DELETE FROM alert_rules WHERE id NOT IN (
+		SELECT MIN(id) FROM alert_rules GROUP BY name
+	)`)
+
+	// Add UNIQUE constraint on alert_rules.name if missing (recreate via rename)
+	d.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_rules_name ON alert_rules(name)`)
+
 	// Create indexes for new columns (IF NOT EXISTS is safe)
 	d.Exec("CREATE INDEX IF NOT EXISTS idx_requests_country ON requests(country)")
 

@@ -56,7 +56,7 @@ func (h *Handler) IngestAppLogs(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range batch.Logs {
 		attrsJSON, _ := json.Marshal(entry.Attrs)
 		if err := qtx.InsertAppLog(ctx, db.InsertAppLogParams{
-			Ts:      entry.Time,
+			Ts:      entry.Time.UTC(),
 			App:     batch.App,
 			Level:   entry.Level,
 			Message: entry.Message,
