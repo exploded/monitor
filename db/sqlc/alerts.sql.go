@@ -23,7 +23,7 @@ func (q *Queries) Count5xxSince(ctx context.Context, ts time.Time) (int64, error
 }
 
 const countAppErrorsSinceForAlert = `-- name: CountAppErrorsSinceForAlert :one
-SELECT COUNT(*) FROM app_logs WHERE level IN ('ERROR', 'WARN') AND ts >= ?
+SELECT COUNT(*) FROM app_logs WHERE level = 'ERROR' AND ts >= ?
 `
 
 func (q *Queries) CountAppErrorsSinceForAlert(ctx context.Context, ts time.Time) (int64, error) {
@@ -235,6 +235,39 @@ UPDATE alert_rules SET enabled = CASE WHEN enabled = 0 THEN 1 ELSE 0 END WHERE i
 func (q *Queries) ToggleAlertRule(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, toggleAlertRule, id)
 	return err
+}
+
+const topAppErrorAppsSince = `-- name: TopAppErrorAppsSince :many
+SELECT app, COUNT(*) AS cnt FROM app_logs WHERE level = 'ERROR' AND ts >= ?
+GROUP BY app ORDER BY cnt DESC LIMIT 5
+`
+
+type TopAppErrorAppsSinceRow struct {
+	App string `json:"app"`
+	Cnt int64  `json:"cnt"`
+}
+
+func (q *Queries) TopAppErrorAppsSince(ctx context.Context, ts time.Time) ([]TopAppErrorAppsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, topAppErrorAppsSince, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopAppErrorAppsSinceRow
+	for rows.Next() {
+		var i TopAppErrorAppsSinceRow
+		if err := rows.Scan(&i.App, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const updateAlertRuleFired = `-- name: UpdateAlertRuleFired :exec

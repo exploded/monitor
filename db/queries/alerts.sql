@@ -33,7 +33,11 @@ SELECT COUNT(*) FROM requests WHERE status >= 500 AND ts >= ?;
 SELECT COUNT(*) FROM requests WHERE ts >= ?;
 
 -- name: CountAppErrorsSinceForAlert :one
-SELECT COUNT(*) FROM app_logs WHERE level IN ('ERROR', 'WARN') AND ts >= ?;
+SELECT COUNT(*) FROM app_logs WHERE level = 'ERROR' AND ts >= ?;
+
+-- name: TopAppErrorAppsSince :many
+SELECT app, COUNT(*) AS cnt FROM app_logs WHERE level = 'ERROR' AND ts >= ?
+GROUP BY app ORDER BY cnt DESC LIMIT 5;
 
 -- name: DeleteAlertLogsBefore :exec
 DELETE FROM alert_log WHERE created_at < ?;

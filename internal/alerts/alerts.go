@@ -115,8 +115,20 @@ func (e *Engine) checkRules(ctx context.Context) {
 				details = formatDetails("count", count, "window_min", rule.WindowMinutes, "threshold", rule.Threshold)
 				msg += ": " + formatCount(count, rule.WindowMinutes, "requests")
 			case "app_error":
-				details = formatDetails("count", count, "window_min", rule.WindowMinutes, "threshold", rule.Threshold)
+				appBreakdown := ""
+				if apps, err2 := e.q.TopAppErrorAppsSince(ctx, window); err2 == nil && len(apps) > 0 {
+					for _, a := range apps {
+						if appBreakdown != "" {
+							appBreakdown += ", "
+						}
+						appBreakdown += fmt.Sprintf("%s: %d", a.App, a.Cnt)
+					}
+				}
+				details = formatDetails("count", count, "window_min", rule.WindowMinutes, "threshold", rule.Threshold, "apps", appBreakdown)
 				msg += ": " + formatCount(count, rule.WindowMinutes, "errors")
+				if appBreakdown != "" {
+					msg += " (" + appBreakdown + ")"
+				}
 			}
 			e.fire(ctx, rule.ID, rule.Type, msg, details)
 		}
