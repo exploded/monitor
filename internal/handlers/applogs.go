@@ -139,9 +139,18 @@ func (h *Handler) AppErrorsPanel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	since := time.Now().UTC().Add(-24 * time.Hour)
 
-	errors, _ := h.q.RecentAppErrors(ctx, 20)
-	errorCount, _ := h.q.CountAppErrorsSince(ctx, since)
-	totalCount, _ := h.q.CountAppLogsSince(ctx, since)
+	errors, err := h.q.RecentAppErrors(ctx, 20)
+	if err != nil {
+		slog.Error("query recent app errors", "err", err)
+	}
+	errorCount, err := h.q.CountAppErrorsSince(ctx, since)
+	if err != nil {
+		slog.Error("query count app errors", "err", err)
+	}
+	totalCount, err := h.q.CountAppLogsSince(ctx, since)
+	if err != nil {
+		slog.Error("query count app logs", "err", err)
+	}
 
 	tmpl, ok := h.pages["dashboard"]
 	if !ok {

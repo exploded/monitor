@@ -6,7 +6,7 @@ VALUES (?, ?, ?, ?, ?, ?);
 SELECT id, ts, app, level, message, attrs, source, created_at
 FROM app_logs
 WHERE level IN ('ERROR', 'WARN')
-ORDER BY id DESC
+ORDER BY ts DESC, id DESC
 LIMIT ?;
 
 -- name: RecentAppLogs :many
