@@ -50,10 +50,15 @@ type Watcher struct {
 	geo              *geoip.Resolver
 	rowTmpl          *template.Template
 	ingestCh         chan db.InsertRequestParams
+	ignoreHosts      map[string]bool
 }
 
 // New creates a Watcher. The rowTmpl is used to render live log HTML for SSE.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template) *Watcher {
+func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template, ignoreHosts []string) *Watcher {
+	ih := make(map[string]bool, len(ignoreHosts))
+	for _, h := range ignoreHosts {
+		ih[h] = true
+	}
 	return &Watcher{
 		logPath:         logPath,
 		rawDB:           rawDB,
@@ -65,6 +70,7 @@ func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher 
 		geo:             geo,
 		rowTmpl:         rowTmpl,
 		ingestCh:        make(chan db.InsertRequestParams, 256),
+		ignoreHosts:     ih,
 	}
 }
 
@@ -133,6 +139,11 @@ func (w *Watcher) processLine(line []byte) {
 
 	// Skip non-request log entries
 	if entry.Request.Host == "" {
+		return
+	}
+
+	// Skip ignored hosts (e.g. monitor's own traffic)
+	if w.ignoreHosts[entry.Request.Host] {
 		return
 	}
 

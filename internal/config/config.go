@@ -18,6 +18,7 @@ type Config struct {
 	LogAPIKey         string
 	DiscordWebhookURL string
 	GeoIPDBPath       string
+	IgnoreHosts       []string
 }
 
 func Load() Config {
@@ -39,6 +40,7 @@ func Load() Config {
 		LogAPIKey:         os.Getenv("LOG_API_KEY"),
 		DiscordWebhookURL: os.Getenv("DISCORD_WEBHOOK_URL"),
 		GeoIPDBPath:       envOr("GEOIP_DB_PATH", "GeoLite2-City.mmdb"),
+		IgnoreHosts:       parseList(os.Getenv("IGNORE_HOSTS")),
 	}
 }
 
@@ -47,6 +49,21 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func parseList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func loadDotEnv(path string) {

@@ -143,7 +143,7 @@ func main() {
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
-		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, honeypotChecker, geoResolver, rowTmpl)
+		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, honeypotChecker, geoResolver, rowTmpl, cfg.IgnoreHosts)
 		go func() {
 			if err := w.Run(ctx); err != nil && err != context.Canceled {
 				slog.Error("watcher stopped", "err", err)
