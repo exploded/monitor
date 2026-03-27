@@ -68,7 +68,7 @@ func (h *Handler) ExportSearch(w http.ResponseWriter, r *http.Request) {
 		for _, r := range results {
 			cw.Write([]string{
 				strconv.FormatInt(r.ID, 10),
-				r.Ts.Format("2006-01-02 15:04:05"),
+				r.Ts.In(melbourne).Format("2006-01-02 15:04:05"),
 				r.Host,
 				r.ClientIp,
 				r.Method,

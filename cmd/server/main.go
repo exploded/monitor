@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+	_ "time/tzdata" // embed timezone data for static binary
 
 	db "github.com/exploded/monitor/db/sqlc"
 	"github.com/exploded/monitor/internal/alerts"
@@ -296,6 +298,10 @@ func main() {
 // loadRowTemplate loads the _live_log_row template with the same funcMap
 // used by the main template engine, so the watcher can render SSE HTML.
 func loadRowTemplate() (*template.Template, error) {
+	mel, err := time.LoadLocation("Australia/Melbourne")
+	if err != nil {
+		return nil, fmt.Errorf("load timezone: %w", err)
+	}
 	funcMap := template.FuncMap{
 		"statusClass": func(status int64) string {
 			switch {
@@ -310,7 +316,7 @@ func loadRowTemplate() (*template.Template, error) {
 			}
 		},
 		"formatTime": func(t time.Time) string {
-			return t.Format("15:04:05")
+			return t.In(mel).Format("15:04:05")
 		},
 		"truncate": func(s string, n int) string {
 			if len(s) <= n {

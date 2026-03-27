@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +14,17 @@ import (
 	"github.com/exploded/monitor/internal/reputation"
 )
 
+// melbourne is the IANA timezone used for all displayed timestamps.
+var melbourne *time.Location
+
+func init() {
+	var err error
+	melbourne, err = time.LoadLocation("Australia/Melbourne")
+	if err != nil {
+		log.Fatalf("failed to load Australia/Melbourne timezone: %v", err)
+	}
+}
+
 // PageTemplates maps page names to their cloned template set.
 type PageTemplates map[string]*template.Template
 
@@ -21,13 +33,27 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 	funcMap := template.FuncMap{
 		"safeHTML": func(s string) template.HTML { return template.HTML(s) },
 		"formatTime": func(t time.Time) string {
-			return t.Format("15:04:05")
+			return t.In(melbourne).Format("15:04:05")
 		},
 		"formatDateTime": func(t time.Time) string {
-			return t.Format("2006-01-02 15:04:05")
+			return t.In(melbourne).Format("2006-01-02 15:04:05")
 		},
 		"formatDate": func(t time.Time) string {
-			return t.Format("2006-01-02")
+			return t.In(melbourne).Format("2006-01-02")
+		},
+		"localHour": func(utcHour string) string {
+			t, err := time.Parse("2006-01-02 15:00", utcHour)
+			if err != nil {
+				return utcHour
+			}
+			return t.In(melbourne).Format("2006-01-02 15:00")
+		},
+		"localMinute": func(utcMin string) string {
+			t, err := time.Parse("2006-01-02 15:04", utcMin)
+			if err != nil {
+				return utcMin
+			}
+			return t.In(melbourne).Format("2006-01-02 15:04")
 		},
 		"humanSize": func(bytes int64) string {
 			switch {

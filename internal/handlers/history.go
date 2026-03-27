@@ -12,6 +12,15 @@ import (
 	db "github.com/exploded/monitor/db/sqlc"
 )
 
+// utcHourToLocal converts a UTC hour string like "2024-03-27 14:00" to Melbourne local time.
+func utcHourToLocal(s string) string {
+	t, err := time.Parse("2006-01-02 15:00", s)
+	if err != nil {
+		return s
+	}
+	return t.In(melbourne).Format("2006-01-02 15:00")
+}
+
 // History renders the historical views page.
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -44,7 +53,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		}
 		label := ""
 		if s, ok := row.Hour.(string); ok {
-			label = s
+			label = utcHourToLocal(s)
 		}
 		bars[i] = ChartBar{Hour: label, Count: row.Cnt, Height: height}
 	}
@@ -118,7 +127,7 @@ func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
 		}
 		label := ""
 		if s, ok := row.Hour.(string); ok {
-			label = s
+			label = utcHourToLocal(s)
 		}
 		bars[i] = ChartBar{Hour: label, Count: row.Cnt, Height: height}
 	}
@@ -240,7 +249,7 @@ func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, float64
 	for _, row := range rows {
 		hour := ""
 		if s, ok := row.Hour.(string); ok {
-			hour = s
+			hour = utcHourToLocal(s)
 		}
 		if hour != curHour {
 			flush()
@@ -310,7 +319,7 @@ func computeBWBars(rows []db.HourlyBandwidthRow) []BWBar {
 		}
 		label := ""
 		if s, ok := row.Hour.(string); ok {
-			label = s
+			label = utcHourToLocal(s)
 		}
 		bars[i] = BWBar{Hour: label, Bytes: b, Height: height}
 	}
