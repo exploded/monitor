@@ -79,10 +79,6 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 	// Create indexes for new columns (IF NOT EXISTS is safe)
 	d.Exec("CREATE INDEX IF NOT EXISTS idx_requests_country ON requests(country)")
 
-	// ONE-TIME WIPE — remove after deploy
-	d.Exec(`DELETE FROM app_logs`)
-	d.Exec(`DELETE FROM alert_log`)
-
 	return d, nil
 }
 
