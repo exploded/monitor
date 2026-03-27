@@ -108,13 +108,13 @@ func (h *Handler) Handle(_ context.Context, r slog.Record) error {
 	// Pre-resolved attrs from WithAttrs
 	for _, a := range h.attrs {
 		key := h.prefixKey(a.Key)
-		attrs[key] = a.Value.Any()
+		attrs[key] = attrValue(a.Value)
 	}
 
 	// Record attrs
 	r.Attrs(func(a slog.Attr) bool {
 		key := h.prefixKey(a.Key)
-		attrs[key] = a.Value.Any()
+		attrs[key] = attrValue(a.Value)
 		return true
 	})
 
@@ -170,6 +170,19 @@ func (h *Handler) Shutdown() {
 	h.state.stopped = true
 	h.state.mu.Unlock()
 	close(h.state.stopCh)
+}
+
+// attrValue extracts a JSON-safe value from a slog.Value.
+// error types are resolved to their .Error() string so they don't
+// marshal as empty objects.
+func attrValue(v slog.Value) any {
+	v = v.Resolve()
+	if v.Kind() == slog.KindAny {
+		if err, ok := v.Any().(error); ok {
+			return err.Error()
+		}
+	}
+	return v.Any()
 }
 
 func (h *Handler) prefixKey(key string) string {
