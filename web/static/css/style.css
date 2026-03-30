@@ -289,7 +289,7 @@ tr:hover { background: var(--surface-hover); }
   font-size: 0.65rem;
   color: var(--text-muted);
 }
-.chart-label { width: 30px; text-align: center; }
+.chart-label { flex: 1; min-width: 0; text-align: center; overflow: visible; white-space: nowrap; }
 
 /* ===== Status Dots (Uptime) ===== */
 .status-dot {
@@ -374,7 +374,7 @@ tr:hover { background: var(--surface-hover); }
 .chart-legend { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
 .legend-item { display: flex; align-items: center; gap: 0.3rem; color: var(--text-muted); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
-.chart-label-wide { width: 40px; text-align: center; font-size: 0.65rem; color: var(--text-muted); }
+.chart-label-wide { flex: 1; min-width: 0; text-align: center; font-size: 0.65rem; color: var(--text-muted); overflow: visible; white-space: nowrap; }
 
 /* ===== Bandwidth Chart ===== */
 .bar-bw { fill: var(--green); }

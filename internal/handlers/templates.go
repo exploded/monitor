@@ -90,6 +90,30 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 			}
 			return s
 		},
+		"mod": func(a, b int) int {
+			if b == 0 {
+				return 0
+			}
+			return a % b
+		},
+		"chartLabel": func(s string, step int) string {
+			// For short ranges (step 1), just show time "14:00"
+			if step <= 1 {
+				if i := strings.LastIndex(s, " "); i >= 0 && i+1 < len(s) {
+					return s[i+1:]
+				}
+				return s
+			}
+			// For multi-day ranges, parse and show date + time
+			t, err := time.Parse("2006-01-02 15:04", s)
+			if err != nil {
+				return s
+			}
+			if step >= 24 {
+				return t.Format("Jan 2")
+			}
+			return t.Format("Jan 2 15h")
+		},
 		"add": func(a, b int) int { return a + b },
 		"sub": func(a, b int) int { return a - b },
 		"dict": func(pairs ...any) map[string]any {

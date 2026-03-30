@@ -10,8 +10,9 @@
     {{end}}
   </svg>
   <div class="chart-labels">
-    {{range .Extra.BWBars}}
-    <span class="chart-label">{{shortHour .Hour}}</span>
+    {{$step := .Extra.LabelStep}}
+    {{range $i, $bar := .Extra.BWBars}}
+    <span class="chart-label">{{if eq (mod $i $step) 0}}{{chartLabel $bar.Hour $step}}{{end}}</span>
     {{end}}
   </div>
 </div>

@@ -18,8 +18,9 @@
     {{end}}
   </svg>
   <div class="chart-labels">
-    {{range .Extra.LatencyPoints}}
-    <span class="chart-label-wide">{{shortHour .Hour}}</span>
+    {{$step := .Extra.LabelStep}}
+    {{range $i, $pt := .Extra.LatencyPoints}}
+    <span class="chart-label-wide">{{if eq (mod $i $step) 0}}{{chartLabel $pt.Hour $step}}{{end}}</span>
     {{end}}
   </div>
 </div>

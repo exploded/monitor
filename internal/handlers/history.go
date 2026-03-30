@@ -47,6 +47,19 @@ func parseRange(r *http.Request) (time.Time, string) {
 	}
 }
 
+// labelStep returns how often to show a label given n data points.
+// Aims for roughly 12-24 visible labels regardless of range.
+func labelStep(n int) int {
+	switch {
+	case n <= 24:
+		return 1
+	case n <= 48:
+		return 4
+	default:
+		return 12
+	}
+}
+
 // History renders the historical views page.
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -103,6 +116,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	uptimeData := h.buildUptimeChartData(r)
 	uptimeCharts, _ := uptimeData.Extra["UptimeCharts"]
 
+	step := labelStep(len(bars))
+
 	h.render(w, r, "history", "", PageData{
 		Title: "History",
 		Extra: map[string]any{
@@ -114,6 +129,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"BWBars":        bwBars,
 			"Range":         rng,
 			"RangeLabel":    rangeLabels[rng],
+			"LabelStep":     step,
 			"UptimeCharts":  uptimeCharts,
 		},
 	})
@@ -171,7 +187,7 @@ func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"Bars": bars, "RangeLabel": rangeLabels[rng]}}
+	data := PageData{Extra: map[string]any{"Bars": bars, "RangeLabel": rangeLabels[rng], "LabelStep": labelStep(len(bars))}}
 	if err := tmpl.ExecuteTemplate(w, "_hourly_chart", data); err != nil {
 		slog.Error("render hourly chart", "err", err)
 	}
@@ -219,6 +235,7 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 		"MaxLatency":    maxVal,
 		"ChartWidth":    chartWidth,
 		"RangeLabel":    rangeLabels[rng],
+		"LabelStep":     labelStep(len(points)),
 	}}
 	if err := tmpl.ExecuteTemplate(w, "_latency_chart", data); err != nil {
 		slog.Error("render latency chart", "err", err)
@@ -244,7 +261,7 @@ func (h *Handler) BandwidthChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"BWBars": bars, "RangeLabel": rangeLabels[rng]}}
+	data := PageData{Extra: map[string]any{"BWBars": bars, "RangeLabel": rangeLabels[rng], "LabelStep": labelStep(len(bars))}}
 	if err := tmpl.ExecuteTemplate(w, "_bandwidth_chart", data); err != nil {
 		slog.Error("render bandwidth chart", "err", err)
 	}
