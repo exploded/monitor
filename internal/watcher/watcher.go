@@ -117,7 +117,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 				slog.Info("watcher reopened log file (rotation detected)")
 				continue
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(250 * time.Millisecond)
 			continue
 		}
 
@@ -217,7 +217,7 @@ func (w *Watcher) broadcastRow(p db.InsertRequestParams) {
 }
 
 func (w *Watcher) batchWriter(ctx context.Context) {
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	batch := make([]db.InsertRequestParams, 0, 100)

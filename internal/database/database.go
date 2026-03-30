@@ -16,7 +16,10 @@ import (
 // Open opens (or creates) the SQLite database at path, applies the schema,
 // and enables WAL mode for concurrent reads.
 func Open(path, schemaPath string) (*sql.DB, error) {
-	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_time_format=sqlite"
+	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_time_format=sqlite" +
+		"&_synchronous=NORMAL" + // safe in WAL mode; eliminates most fsyncs
+		"&_cache_size=-20000" + // 20 MB page cache (negative = kibibytes)
+		"&_mmap_size=268435456" // 256 MB memory-mapped I/O
 	d, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
