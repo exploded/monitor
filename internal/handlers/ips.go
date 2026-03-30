@@ -38,7 +38,6 @@ func (h *Handler) BlockIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ips, _ := h.q.ListBlockedIPs(r.Context())
-	h.syncBlockedIPs(ips)
 	h.renderIPList(w, ips)
 }
 
@@ -57,21 +56,7 @@ func (h *Handler) UnblockIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ips, _ := h.q.ListBlockedIPs(r.Context())
-	h.syncBlockedIPs(ips)
 	h.renderIPList(w, ips)
-}
-
-func (h *Handler) syncBlockedIPs(ips []db.BlockedIp) {
-	if h.caddy == nil {
-		return
-	}
-	list := make([]string, len(ips))
-	for i, ip := range ips {
-		list[i] = ip.Ip
-	}
-	if err := h.caddy.SyncBlockedIPs(list); err != nil {
-		slog.Error("sync blocked IPs to caddy", "err", err)
-	}
 }
 
 func (h *Handler) renderIPList(w http.ResponseWriter, ips []db.BlockedIp) {

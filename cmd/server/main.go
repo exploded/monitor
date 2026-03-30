@@ -16,7 +16,6 @@ import (
 	db "github.com/exploded/monitor/db/sqlc"
 	"github.com/exploded/monitor/internal/alerts"
 	"github.com/exploded/monitor/internal/anomaly"
-	"github.com/exploded/monitor/internal/caddy"
 	"github.com/exploded/monitor/internal/config"
 	"github.com/exploded/monitor/internal/database"
 	"github.com/exploded/monitor/internal/geoip"
@@ -80,11 +79,8 @@ func main() {
 	}
 	matcher.Load(botPatterns)
 
-	// Caddy admin API client
-	caddyClient := caddy.New(cfg.CaddyAdminURL)
-
 	// Auto-blocker (blocks IPs by request path patterns)
-	autoBlocker := watcher.NewAutoBlocker(q, caddyClient)
+	autoBlocker := watcher.NewAutoBlocker(q)
 	abRules, err := q.ListEnabledAutoblockRules(context.Background())
 	if err != nil {
 		slog.Error("load autoblock rules", "err", err)
@@ -94,7 +90,7 @@ func main() {
 	slog.Info("autoblocker loaded", "rules", len(abRules))
 
 	// Honeypot checker (blocks IPs by honeypot path patterns)
-	honeypotChecker := watcher.NewHoneypotChecker(q, caddyClient)
+	honeypotChecker := watcher.NewHoneypotChecker(q)
 	hpRules, err := q.ListEnabledHoneypots(context.Background())
 	if err != nil {
 		slog.Error("load honeypot rules", "err", err)
@@ -112,37 +108,7 @@ func main() {
 	// Alert engine
 	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
 
-	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, honeypotChecker, alertEngine, caddyClient, &cfg)
-
-	// Sync blocked IPs and UAs to Caddy on startup
-	if caddyClient != nil {
-		blockedIPs, _ := q.ListBlockedIPs(context.Background())
-		if len(blockedIPs) > 0 {
-			ips := make([]string, len(blockedIPs))
-			for i, ip := range blockedIPs {
-				ips[i] = ip.Ip
-			}
-			if err := caddyClient.SyncBlockedIPs(ips); err != nil {
-				slog.Warn("startup sync blocked IPs to caddy", "err", err)
-			} else {
-				slog.Info("synced blocked IPs to caddy", "count", len(ips))
-			}
-		}
-
-		var blockedUAs []string
-		for _, p := range botPatterns {
-			if p.Block == 1 {
-				blockedUAs = append(blockedUAs, p.Pattern)
-			}
-		}
-		if len(blockedUAs) > 0 {
-			if err := caddyClient.SyncBlockedUAs(blockedUAs); err != nil {
-				slog.Warn("startup sync blocked UAs to caddy", "err", err)
-			} else {
-				slog.Info("synced blocked UAs to caddy", "count", len(blockedUAs))
-			}
-		}
-	}
+	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, honeypotChecker, alertEngine, &cfg)
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -184,17 +150,6 @@ func main() {
 					// Reset dedup maps so returning IPs can be re-blocked
 					autoBlocker.ResetDedup()
 					honeypotChecker.ResetDedup()
-					// Re-sync remaining blocked IPs to Caddy
-					if caddyClient != nil {
-						ips, _ := q.ListBlockedIPs(context.Background())
-						list := make([]string, len(ips))
-						for i, ip := range ips {
-							list[i] = ip.Ip
-						}
-						if err := caddyClient.SyncBlockedIPs(list); err != nil {
-							slog.Error("re-sync blocked IPs after prune", "err", err)
-						}
-					}
 				}
 			}
 		}

@@ -93,22 +93,6 @@ func (h *Handler) refreshBotMatcher(ctx context.Context) {
 		return
 	}
 	h.matcher.Load(patterns)
-	h.syncBlockedUAs(patterns)
-}
-
-func (h *Handler) syncBlockedUAs(patterns []db.BotPattern) {
-	if h.caddy == nil {
-		return
-	}
-	var blocked []string
-	for _, p := range patterns {
-		if p.Block == 1 {
-			blocked = append(blocked, p.Pattern)
-		}
-	}
-	if err := h.caddy.SyncBlockedUAs(blocked); err != nil {
-		slog.Error("sync blocked UAs to caddy", "err", err)
-	}
 }
 
 func (h *Handler) renderBotList(w http.ResponseWriter, patterns []db.BotPattern) {

@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	db "github.com/exploded/monitor/db/sqlc"
-	"github.com/exploded/monitor/internal/caddy"
 )
 
 type honeypotRule struct {
@@ -17,20 +16,18 @@ type honeypotRule struct {
 }
 
 // HoneypotChecker checks request URIs against honeypot paths and
-// automatically blocks matching IPs via the database and Caddy.
+// automatically blocks matching IPs via the database.
 type HoneypotChecker struct {
 	mu      sync.RWMutex
 	rules   []honeypotRule
 	blocked map[string]bool
 	q       *db.Queries
-	caddy   *caddy.Client
 }
 
-func NewHoneypotChecker(q *db.Queries, caddyClient *caddy.Client) *HoneypotChecker {
+func NewHoneypotChecker(q *db.Queries) *HoneypotChecker {
 	return &HoneypotChecker{
 		blocked: make(map[string]bool),
 		q:       q,
-		caddy:   caddyClient,
 	}
 }
 
@@ -108,20 +105,4 @@ func (hc *HoneypotChecker) blockIP(ip, reason string, ruleID int64) {
 	}
 
 	slog.Info("honeypot blocked IP", "ip", ip, "reason", reason)
-
-	if hc.caddy == nil {
-		return
-	}
-	ips, err := hc.q.ListBlockedIPs(ctx)
-	if err != nil {
-		slog.Error("honeypot list IPs", "err", err)
-		return
-	}
-	list := make([]string, len(ips))
-	for i, blocked := range ips {
-		list[i] = blocked.Ip
-	}
-	if err := hc.caddy.SyncBlockedIPs(list); err != nil {
-		slog.Error("honeypot sync to caddy", "err", err)
-	}
 }

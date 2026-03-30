@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	db "github.com/exploded/monitor/db/sqlc"
-	"github.com/exploded/monitor/internal/caddy"
 )
 
 type autoBlockRule struct {
@@ -17,20 +16,18 @@ type autoBlockRule struct {
 }
 
 // AutoBlocker checks request URIs against path-based rules and
-// automatically blocks matching IPs via the database and Caddy.
+// automatically blocks matching IPs via the database.
 type AutoBlocker struct {
 	mu      sync.RWMutex
 	rules   []autoBlockRule
 	blocked map[string]bool // IPs already blocked this session (dedup)
 	q       *db.Queries
-	caddy   *caddy.Client
 }
 
-func NewAutoBlocker(q *db.Queries, caddyClient *caddy.Client) *AutoBlocker {
+func NewAutoBlocker(q *db.Queries) *AutoBlocker {
 	return &AutoBlocker{
 		blocked: make(map[string]bool),
 		q:       q,
-		caddy:   caddyClient,
 	}
 }
 
@@ -111,21 +108,4 @@ func (ab *AutoBlocker) blockIP(ip, reason string, ruleID int64) {
 	}
 
 	slog.Info("autoblocker blocked IP", "ip", ip, "reason", reason)
-
-	// Sync full blocklist to Caddy
-	if ab.caddy == nil {
-		return
-	}
-	ips, err := ab.q.ListBlockedIPs(ctx)
-	if err != nil {
-		slog.Error("autoblocker list IPs", "err", err)
-		return
-	}
-	list := make([]string, len(ips))
-	for i, blocked := range ips {
-		list[i] = blocked.Ip
-	}
-	if err := ab.caddy.SyncBlockedIPs(list); err != nil {
-		slog.Error("autoblocker sync to caddy", "err", err)
-	}
 }
