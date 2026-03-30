@@ -9,3 +9,8 @@ DELETE FROM blocked_ips WHERE id = ?;
 
 -- name: IsIPBlocked :one
 SELECT COUNT(*) FROM blocked_ips WHERE ip = ?;
+
+-- name: PruneAutoBlockedIPs :execresult
+DELETE FROM blocked_ips
+WHERE (reason LIKE 'auto-blocked:%' OR reason LIKE 'honeypot:%')
+AND created_at < ?;

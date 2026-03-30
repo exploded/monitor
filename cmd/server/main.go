@@ -47,6 +47,13 @@ func main() {
 		slog.Error("prune", "err", err)
 	}
 
+	// Prune auto-blocked IPs older than 48 hours on startup
+	if res, err := q.PruneAutoBlockedIPs(context.Background(), time.Now().Add(-48*time.Hour)); err != nil {
+		slog.Error("prune auto-blocked IPs", "err", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		slog.Info("pruned stale auto-blocked IPs", "count", n)
+	}
+
 	// Load templates
 	pages, err := handlers.LoadTemplates("web/templates")
 	if err != nil {
@@ -166,6 +173,29 @@ func main() {
 				if err := database.Prune(context.Background(), q, cfg.RetentionDays); err != nil {
 					slog.Error("prune", "err", err)
 				}
+				// Prune auto-blocked IPs older than 48 hours
+				res, err := q.PruneAutoBlockedIPs(context.Background(), time.Now().Add(-48*time.Hour))
+				if err != nil {
+					slog.Error("prune auto-blocked IPs", "err", err)
+					continue
+				}
+				if n, _ := res.RowsAffected(); n > 0 {
+					slog.Info("pruned stale auto-blocked IPs", "count", n)
+					// Reset dedup maps so returning IPs can be re-blocked
+					autoBlocker.ResetDedup()
+					honeypotChecker.ResetDedup()
+					// Re-sync remaining blocked IPs to Caddy
+					if caddyClient != nil {
+						ips, _ := q.ListBlockedIPs(context.Background())
+						list := make([]string, len(ips))
+						for i, ip := range ips {
+							list[i] = ip.Ip
+						}
+						if err := caddyClient.SyncBlockedIPs(list); err != nil {
+							slog.Error("re-sync blocked IPs after prune", "err", err)
+						}
+					}
+				}
 			}
 		}
 	}()
@@ -243,6 +273,7 @@ func main() {
 	mux.HandleFunc("GET /partials/daily", h.DailySummary)
 	mux.HandleFunc("GET /partials/latency", h.LatencyChart)
 	mux.HandleFunc("GET /partials/bandwidth", h.BandwidthChart)
+	mux.HandleFunc("GET /partials/uptime", h.UptimeChart)
 	mux.HandleFunc("GET /search", h.Search)
 	mux.HandleFunc("GET /export/search", h.ExportSearch)
 
@@ -250,6 +281,7 @@ func main() {
 	mux.HandleFunc("GET /uptime", h.Uptime)
 	mux.HandleFunc("POST /uptime", h.CreateUptimeTarget)
 	mux.HandleFunc("POST /uptime/{id}/toggle", h.ToggleUptimeTarget)
+	mux.HandleFunc("GET /uptime/{id}", h.UptimeDetail)
 	mux.HandleFunc("POST /uptime/{id}/delete", h.DeleteUptimeTarget)
 
 	// Anomalies

@@ -68,6 +68,26 @@ func (q *Queries) DeleteUptimeTarget(ctx context.Context, id int64) error {
 	return err
 }
 
+const getUptimeTarget = `-- name: GetUptimeTarget :one
+SELECT id, name, url, interval_seconds, expected_status, enabled, created_at
+FROM uptime_targets WHERE id = ?
+`
+
+func (q *Queries) GetUptimeTarget(ctx context.Context, id int64) (UptimeTarget, error) {
+	row := q.db.QueryRowContext(ctx, getUptimeTarget, id)
+	var i UptimeTarget
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Url,
+		&i.IntervalSeconds,
+		&i.ExpectedStatus,
+		&i.Enabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertUptimeCheck = `-- name: InsertUptimeCheck :exec
 INSERT INTO uptime_checks (target_id, ts, status, response_time_ms, error) VALUES (?, ?, ?, ?, ?)
 `
@@ -217,6 +237,49 @@ UPDATE uptime_targets SET enabled = CASE WHEN enabled = 0 THEN 1 ELSE 0 END WHER
 func (q *Queries) ToggleUptimeTarget(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, toggleUptimeTarget, id)
 	return err
+}
+
+const uptimeChecksSince = `-- name: UptimeChecksSince :many
+SELECT id, target_id, ts, status, response_time_ms, error, created_at
+FROM uptime_checks
+WHERE target_id = ?1 AND ts >= ?2
+ORDER BY ts
+`
+
+type UptimeChecksSinceParams struct {
+	TargetID int64     `json:"target_id"`
+	Since    time.Time `json:"since"`
+}
+
+func (q *Queries) UptimeChecksSince(ctx context.Context, arg UptimeChecksSinceParams) ([]UptimeCheck, error) {
+	rows, err := q.db.QueryContext(ctx, uptimeChecksSince, arg.TargetID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UptimeCheck
+	for rows.Next() {
+		var i UptimeCheck
+		if err := rows.Scan(
+			&i.ID,
+			&i.TargetID,
+			&i.Ts,
+			&i.Status,
+			&i.ResponseTimeMs,
+			&i.Error,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const uptimePercentage = `-- name: UptimePercentage :one

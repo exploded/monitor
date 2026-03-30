@@ -21,10 +21,36 @@ func utcHourToLocal(s string) string {
 	return t.In(melbourne).Format("2006-01-02 15:00")
 }
 
+// rangeLabels maps range keys to human-readable labels.
+var rangeLabels = map[string]string{
+	"6h":  "last 6h",
+	"12h": "last 12h",
+	"24h": "last 24h",
+	"48h": "last 48h",
+	"7d":  "last 7 days",
+}
+
+// parseRange returns the since time and range key from a request's "range" query param.
+func parseRange(r *http.Request) (time.Time, string) {
+	rng := r.URL.Query().Get("range")
+	switch rng {
+	case "6h":
+		return time.Now().UTC().Add(-6 * time.Hour), "6h"
+	case "12h":
+		return time.Now().UTC().Add(-12 * time.Hour), "12h"
+	case "48h":
+		return time.Now().UTC().Add(-48 * time.Hour), "48h"
+	case "7d":
+		return time.Now().UTC().Add(-7 * 24 * time.Hour), "7d"
+	default:
+		return time.Now().UTC().Add(-24 * time.Hour), "24h"
+	}
+}
+
 // History renders the historical views page.
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	since := time.Now().UTC().Add(-24 * time.Hour)
+	since, rng := parseRange(r)
 	daySince := time.Now().UTC().Add(-30 * 24 * time.Hour)
 
 	hourly, _ := h.q.HourlyRequestCounts(ctx, since)
@@ -73,6 +99,10 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	})
 	bwBars := computeBWBars(bwRows)
 
+	// Uptime chart data
+	uptimeData := h.buildUptimeChartData(r)
+	uptimeCharts, _ := uptimeData.Extra["UptimeCharts"]
+
 	h.render(w, r, "history", "", PageData{
 		Title: "History",
 		Extra: map[string]any{
@@ -82,6 +112,9 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"MaxLatency":    maxLatency,
 			"ChartWidth":    chartWidth + 20,
 			"BWBars":        bwBars,
+			"Range":         rng,
+			"RangeLabel":    rangeLabels[rng],
+			"UptimeCharts":  uptimeCharts,
 		},
 	})
 }
@@ -90,7 +123,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	host := r.URL.Query().Get("host")
-	since := time.Now().UTC().Add(-24 * time.Hour)
+	since, rng := parseRange(r)
 
 	var hourly []db.HourlyRequestCountsRow
 	if host != "" {
@@ -138,7 +171,7 @@ func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"Bars": bars}}
+	data := PageData{Extra: map[string]any{"Bars": bars, "RangeLabel": rangeLabels[rng]}}
 	if err := tmpl.ExecuteTemplate(w, "_hourly_chart", data); err != nil {
 		slog.Error("render hourly chart", "err", err)
 	}
@@ -166,7 +199,7 @@ func (h *Handler) DailySummary(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	host := r.URL.Query().Get("host")
-	since := time.Now().UTC().Add(-24 * time.Hour)
+	since, rng := parseRange(r)
 
 	rows, _ := h.q.HourlyDurations(ctx, db.HourlyDurationsParams{
 		Since:      since,
@@ -185,6 +218,7 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 		"LatencyPoints": points,
 		"MaxLatency":    maxVal,
 		"ChartWidth":    chartWidth,
+		"RangeLabel":    rangeLabels[rng],
 	}}
 	if err := tmpl.ExecuteTemplate(w, "_latency_chart", data); err != nil {
 		slog.Error("render latency chart", "err", err)
@@ -195,7 +229,7 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) BandwidthChart(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	host := r.URL.Query().Get("host")
-	since := time.Now().UTC().Add(-24 * time.Hour)
+	since, rng := parseRange(r)
 
 	rows, _ := h.q.HourlyBandwidth(ctx, db.HourlyBandwidthParams{
 		Since:      since,
@@ -210,7 +244,7 @@ func (h *Handler) BandwidthChart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"BWBars": bars}}
+	data := PageData{Extra: map[string]any{"BWBars": bars, "RangeLabel": rangeLabels[rng]}}
 	if err := tmpl.ExecuteTemplate(w, "_bandwidth_chart", data); err != nil {
 		slog.Error("render bandwidth chart", "err", err)
 	}
@@ -324,6 +358,184 @@ func computeBWBars(rows []db.HourlyBandwidthRow) []BWBar {
 		bars[i] = BWBar{Hour: label, Bytes: b, Height: height}
 	}
 	return bars
+}
+
+// UptimeHourSegment holds data for one hour segment on the uptime timeline.
+type UptimeHourSegment struct {
+	Label  string  // e.g. "2024-03-27 14:00"
+	State  string  // "up", "degraded", "down", "none"
+	Detail string  // tooltip text
+	AvgMs  float64 // average response time (0 if no data)
+}
+
+// UptimeTargetChart holds the full chart data for one uptime target.
+type UptimeTargetChart struct {
+	ID        int64
+	Name      string
+	IsUp      bool
+	UptimePct float64
+	Hours     []UptimeHourSegment
+	// SVG response time points
+	RtPoints []UptimeRtPoint
+	MaxMs    float64
+	ChartW   int
+}
+
+// UptimeRtPoint holds SVG coordinates for a response time chart point.
+type UptimeRtPoint struct {
+	X  int
+	Y  int
+	Ms float64
+	Hr string
+}
+
+// computeUptimeChart builds timeline segments and response time points for a target.
+func computeUptimeChart(checks []db.UptimeCheck, expectedStatus int64, since time.Time) ([]UptimeHourSegment, []UptimeRtPoint, float64, float64) {
+	// Build 24 hourly buckets from since to now
+	type bucket struct {
+		total int
+		up    int
+		sumMs float64
+		okCnt int
+	}
+	buckets := make(map[string]*bucket)
+
+	for _, c := range checks {
+		key := c.Ts.UTC().Format("2006-01-02 15:00")
+		b, ok := buckets[key]
+		if !ok {
+			b = &bucket{}
+			buckets[key] = b
+		}
+		b.total++
+		if c.Status == expectedStatus && c.Error == "" {
+			b.up++
+		}
+		if c.Error == "" {
+			b.sumMs += c.ResponseTimeMs
+			b.okCnt++
+		}
+	}
+
+	// Generate ordered hour keys for the last 24 hours
+	now := time.Now().UTC()
+	start := since.UTC().Truncate(time.Hour)
+	var segments []UptimeHourSegment
+	var rtPoints []UptimeRtPoint
+	var maxMs float64
+	totalChecks := 0
+	totalUp := 0
+
+	i := 0
+	for t := start; !t.After(now); t = t.Add(time.Hour) {
+		key := t.Format("2006-01-02 15:00")
+		localLabel := utcHourToLocal(key)
+		b := buckets[key]
+
+		seg := UptimeHourSegment{Label: localLabel}
+		avgMs := 0.0
+
+		if b == nil || b.total == 0 {
+			seg.State = "none"
+			seg.Detail = "no data"
+		} else {
+			totalChecks += b.total
+			totalUp += b.up
+			if b.up == b.total {
+				seg.State = "up"
+			} else if b.up == 0 {
+				seg.State = "down"
+			} else {
+				seg.State = "degraded"
+			}
+			if b.okCnt > 0 {
+				avgMs = b.sumMs / float64(b.okCnt)
+			}
+			seg.Detail = fmt.Sprintf("%d/%d OK, avg %.0fms", b.up, b.total, avgMs)
+			seg.AvgMs = avgMs
+		}
+		segments = append(segments, seg)
+
+		if avgMs > maxMs {
+			maxMs = avgMs
+		}
+		rtPoints = append(rtPoints, UptimeRtPoint{X: i * 40, Ms: avgMs, Hr: localLabel})
+		i++
+	}
+
+	if maxMs == 0 {
+		maxMs = 1
+	}
+	for j := range rtPoints {
+		rtPoints[j].Y = 120 - int(rtPoints[j].Ms/maxMs*118)
+	}
+
+	uptimePct := 0.0
+	if totalChecks > 0 {
+		uptimePct = float64(totalUp) / float64(totalChecks) * 100
+	}
+
+	return segments, rtPoints, maxMs, uptimePct
+}
+
+// UptimeChart renders the uptime chart partial for the history page.
+func (h *Handler) UptimeChart(w http.ResponseWriter, r *http.Request) {
+	data := h.buildUptimeChartData(r)
+
+	tmpl, ok := h.pages["history"]
+	if !ok {
+		http.Error(w, "template not found", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := tmpl.ExecuteTemplate(w, "_uptime_chart", data); err != nil {
+		slog.Error("render uptime chart", "err", err)
+	}
+}
+
+// buildUptimeChartData fetches uptime checks and builds chart data for all targets.
+func (h *Handler) buildUptimeChartData(r *http.Request) PageData {
+	ctx := r.Context()
+	since, rng := parseRange(r)
+	targets, _ := h.q.ListUptimeTargets(ctx)
+
+	var charts []UptimeTargetChart
+	for _, t := range targets {
+		checks, _ := h.q.UptimeChecksSince(ctx, db.UptimeChecksSinceParams{
+			TargetID: t.ID,
+			Since:    since,
+		})
+
+		segments, rtPoints, maxMs, uptimePct := computeUptimeChart(checks, t.ExpectedStatus, since)
+
+		// Determine current status from most recent check
+		isUp := false
+		if len(checks) > 0 {
+			last := checks[len(checks)-1]
+			isUp = last.Status == t.ExpectedStatus && last.Error == ""
+		}
+
+		chartW := 20
+		if len(rtPoints) > 1 {
+			chartW = (len(rtPoints)-1)*40 + 20
+		}
+
+		charts = append(charts, UptimeTargetChart{
+			ID:        t.ID,
+			Name:      t.Name,
+			IsUp:      isUp,
+			UptimePct: uptimePct,
+			Hours:     segments,
+			RtPoints:  rtPoints,
+			MaxMs:     maxMs,
+			ChartW:    chartW,
+		})
+	}
+
+	return PageData{Extra: map[string]any{
+		"UptimeCharts": charts,
+		"RangeLabel":   rangeLabels[rng],
+	}}
 }
 
 // Search handles filtered request search.

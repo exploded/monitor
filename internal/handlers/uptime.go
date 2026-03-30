@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -126,4 +127,71 @@ func (h *Handler) DeleteUptimeTarget(w http.ResponseWriter, r *http.Request) {
 	}
 	h.q.DeleteUptimeTarget(r.Context(), id)
 	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
+}
+
+// UptimeDetail renders the detail page for a single uptime target.
+func (h *Handler) UptimeDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	target, err := h.q.GetUptimeTarget(ctx, id)
+	if err != nil {
+		http.Error(w, "target not found", http.StatusNotFound)
+		return
+	}
+
+	// 7-day timeline + response time chart
+	since := time.Now().UTC().Add(-7 * 24 * time.Hour)
+	checks, _ := h.q.UptimeChecksSince(ctx, db.UptimeChecksSinceParams{
+		TargetID: id,
+		Since:    since,
+	})
+
+	segments, rtPoints, maxMs, uptimePct := computeUptimeChart(checks, target.ExpectedStatus, since)
+
+	isUp := false
+	if len(checks) > 0 {
+		last := checks[len(checks)-1]
+		isUp = last.Status == target.ExpectedStatus && last.Error == ""
+	}
+
+	chartW := 20
+	if len(rtPoints) > 1 {
+		chartW = (len(rtPoints)-1)*40 + 20
+	}
+
+	// Recent checks for the table (last 50)
+	recentChecks, _ := h.q.RecentUptimeChecks(ctx, db.RecentUptimeChecksParams{
+		TargetID: id,
+		Limit:    50,
+	})
+
+	// Calculate current avg response time
+	avgRow, _ := h.q.AvgResponseTime(ctx, db.AvgResponseTimeParams{
+		TargetID: id,
+		Ts:       time.Now().UTC().Add(-24 * time.Hour),
+	})
+	avgMs := 0.0
+	if f, ok := avgRow.(float64); ok {
+		avgMs = f
+	}
+
+	h.render(w, r, "uptime_detail", "", PageData{
+		Title: fmt.Sprintf("Uptime: %s", target.Name),
+		Extra: map[string]any{
+			"Target":       target,
+			"IsUp":         isUp,
+			"UptimePct":    uptimePct,
+			"AvgMs":        avgMs,
+			"Segments":     segments,
+			"RtPoints":     rtPoints,
+			"MaxMs":        maxMs,
+			"ChartW":       chartW,
+			"RecentChecks": recentChecks,
+		},
+	})
 }

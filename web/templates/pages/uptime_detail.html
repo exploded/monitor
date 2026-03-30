@@ -1,0 +1,107 @@
+{{define "content"}}
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+  <a href="/uptime" class="btn btn-secondary" style="padding:0.3rem 0.6rem">&larr; Back</a>
+  <h1 style="margin:0">
+    {{if .Extra.IsUp}}<span class="status-dot status-up"></span>{{else}}<span class="status-dot status-down"></span>{{end}}
+    {{.Extra.Target.Name}}
+  </h1>
+</div>
+
+{{/* Summary stats */}}
+<section class="panel panel-wide">
+  <div style="display:flex;gap:2rem;flex-wrap:wrap">
+    <div>
+      <div class="muted" style="font-size:0.75rem">Status</div>
+      <strong>{{if .Extra.IsUp}}<span style="color:var(--green)">UP</span>{{else}}<span style="color:var(--red)">DOWN</span>{{end}}</strong>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.75rem">Uptime (7d)</div>
+      <strong class="{{if ge .Extra.UptimePct 99.5}}uptime-good{{else if ge .Extra.UptimePct 95.0}}uptime-warn{{else}}uptime-bad{{end}}">{{printf "%.2f" .Extra.UptimePct}}%</strong>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.75rem">Avg Response (24h)</div>
+      <strong>{{printf "%.0f" .Extra.AvgMs}} ms</strong>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.75rem">URL</div>
+      <span class="muted" style="font-style:normal">{{.Extra.Target.Url}}</span>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.75rem">Check Interval</div>
+      <span>{{.Extra.Target.IntervalSeconds}}s</span>
+    </div>
+  </div>
+</section>
+
+{{/* 7-day uptime timeline */}}
+<section class="panel panel-wide">
+  <h2>Uptime Timeline <small>(last 7 days)</small></h2>
+  {{if .Extra.Segments}}
+  <div class="uptime-timeline" style="height:32px">
+    {{range .Extra.Segments}}
+    <div class="uptime-seg uptime-{{.State}}" title="{{.Label}}: {{.Detail}}"></div>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="muted">No check data yet.</p>
+  {{end}}
+</section>
+
+{{/* Response time chart */}}
+<section class="panel panel-wide">
+  <h2>Response Time <small>(last 7 days)</small></h2>
+  {{if .Extra.RtPoints}}
+  <div class="uptime-rt-wrap">
+    <svg viewBox="0 0 {{.Extra.ChartW}} 130" class="uptime-rt-chart" preserveAspectRatio="none">
+      <polyline fill="none" stroke="var(--primary)" stroke-width="2" points="{{range .Extra.RtPoints}}{{.X}},{{.Y}} {{end}}"></polyline>
+      {{range .Extra.RtPoints}}
+      {{if gt .Ms 0.0}}
+      <circle cx="{{.X}}" cy="{{.Y}}" r="2.5" fill="var(--primary)">
+        <title>{{.Hr}}: {{printf "%.0f" .Ms}}ms</title>
+      </circle>
+      {{end}}
+      {{end}}
+    </svg>
+  </div>
+  {{else}}
+  <p class="muted">No response time data yet.</p>
+  {{end}}
+</section>
+
+{{/* Recent checks table */}}
+<section class="panel panel-wide">
+  <h2>Recent Checks</h2>
+  {{if .Extra.RecentChecks}}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Status</th>
+        <th>HTTP Code</th>
+        <th>Response Time</th>
+        <th>Time</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Extra.RecentChecks}}
+      <tr>
+        <td>
+          {{if and (eq .Status $.Extra.Target.ExpectedStatus) (eq .Error "")}}
+            <span class="status-dot status-up"></span>
+          {{else}}
+            <span class="status-dot status-down"></span>
+          {{end}}
+        </td>
+        <td>{{.Status}}</td>
+        <td>{{printf "%.0f" .ResponseTimeMs}} ms</td>
+        <td>{{formatDateTime .Ts}}</td>
+        <td>{{if .Error}}<small class="muted">{{truncate .Error 60}}</small>{{end}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No checks recorded yet.</p>
+  {{end}}
+</section>
+{{end}}

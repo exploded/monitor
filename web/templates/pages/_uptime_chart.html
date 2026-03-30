@@ -1,0 +1,37 @@
+{{define "_uptime_chart"}}
+<h2>Service Uptime <small>({{.Extra.RangeLabel}})</small></h2>
+{{if .Extra.UptimeCharts}}
+{{range .Extra.UptimeCharts}}
+<div class="uptime-row">
+  <div class="uptime-header">
+    <span class="uptime-name">
+      {{if .IsUp}}<span class="status-dot status-up"></span>{{else}}<span class="status-dot status-down"></span>{{end}}
+      <a href="/uptime/{{.ID}}"><strong>{{.Name}}</strong></a>
+    </span>
+    <span class="uptime-pct {{if ge .UptimePct 99.5}}uptime-good{{else if ge .UptimePct 95.0}}uptime-warn{{else}}uptime-bad{{end}}">{{printf "%.1f" .UptimePct}}%</span>
+  </div>
+  <div class="uptime-timeline">
+    {{range .Hours}}
+    <div class="uptime-seg uptime-{{.State}}" title="{{.Label}}: {{.Detail}}"></div>
+    {{end}}
+  </div>
+  {{if .RtPoints}}
+  <div class="uptime-rt-wrap">
+    <svg viewBox="0 0 {{.ChartW}} 130" class="uptime-rt-chart" preserveAspectRatio="none">
+      <polyline fill="none" stroke="var(--primary)" stroke-width="2" points="{{range .RtPoints}}{{.X}},{{.Y}} {{end}}"></polyline>
+      {{range .RtPoints}}
+      {{if gt .Ms 0.0}}
+      <circle cx="{{.X}}" cy="{{.Y}}" r="2.5" fill="var(--primary)">
+        <title>{{.Hr}}: {{printf "%.0f" .Ms}}ms</title>
+      </circle>
+      {{end}}
+      {{end}}
+    </svg>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{else}}
+<p class="muted">No uptime targets configured. <a href="/uptime">Add targets</a></p>
+{{end}}
+{{end}}

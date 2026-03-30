@@ -83,6 +83,13 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 			}
 			return s[:n] + "..."
 		},
+		"shortHour": func(s string) string {
+			// "2026-03-30 14:00" → "14:00"
+			if i := strings.LastIndex(s, " "); i >= 0 && i+1 < len(s) {
+				return s[i+1:]
+			}
+			return s
+		},
 		"add": func(a, b int) int { return a + b },
 		"sub": func(a, b int) int { return a - b },
 		"dict": func(pairs ...any) map[string]any {

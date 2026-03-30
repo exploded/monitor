@@ -7,6 +7,8 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
 
 const createBlockedIP = `-- name: CreateBlockedIP :exec
@@ -73,4 +75,14 @@ func (q *Queries) ListBlockedIPs(ctx context.Context) ([]BlockedIp, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const pruneAutoBlockedIPs = `-- name: PruneAutoBlockedIPs :execresult
+DELETE FROM blocked_ips
+WHERE (reason LIKE 'auto-blocked:%' OR reason LIKE 'honeypot:%')
+AND created_at < ?
+`
+
+func (q *Queries) PruneAutoBlockedIPs(ctx context.Context, createdAt time.Time) (sql.Result, error) {
+	return q.db.ExecContext(ctx, pruneAutoBlockedIPs, createdAt)
 }

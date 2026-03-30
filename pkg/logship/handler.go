@@ -27,6 +27,8 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -122,6 +124,12 @@ func (h *Handler) Handle(_ context.Context, r slog.Record) error {
 	if s, ok := attrs["source"]; ok {
 		source = fmt.Sprint(s)
 		delete(attrs, "source")
+	} else if r.PC != 0 {
+		fs := runtime.CallersFrames([]uintptr{r.PC})
+		f, _ := fs.Next()
+		if f.File != "" {
+			source = fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
+		}
 	}
 
 	e := entry{

@@ -1,5 +1,5 @@
 {{define "_latency_chart"}}
-<h2>Response Time Percentiles <small>(last 24h)</small></h2>
+<h2>Response Time Percentiles <small>({{.Extra.RangeLabel}})</small></h2>
 {{if .Extra.LatencyPoints}}
 <div class="chart-legend">
   <span class="legend-item"><span class="legend-dot" style="background:var(--green)"></span> p50</span>
@@ -19,11 +19,11 @@
   </svg>
   <div class="chart-labels">
     {{range .Extra.LatencyPoints}}
-    <span class="chart-label-wide">{{truncate .Hour 5}}</span>
+    <span class="chart-label-wide">{{shortHour .Hour}}</span>
     {{end}}
   </div>
 </div>
 {{else}}
-<p class="muted">No latency data for the last 24 hours.</p>
+<p class="muted">No latency data for the selected range.</p>
 {{end}}
 {{end}}

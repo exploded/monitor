@@ -301,6 +301,47 @@ tr:hover { background: var(--surface-hover); }
 .status-up { background: var(--green); }
 .status-down { background: var(--red); }
 
+/* ===== Uptime Timeline ===== */
+.uptime-row { margin-bottom: 1.5rem; }
+.uptime-row:last-child { margin-bottom: 0; }
+.uptime-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+.uptime-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.uptime-name a { color: var(--text); text-decoration: none; }
+.uptime-name a:hover { color: var(--primary); }
+.uptime-pct { font-size: 0.85rem; font-weight: 600; }
+.uptime-good { color: var(--green); }
+.uptime-warn { color: var(--amber); }
+.uptime-bad { color: var(--red); }
+.uptime-timeline {
+  display: flex;
+  gap: 2px;
+  height: 28px;
+  margin-bottom: 0.3rem;
+}
+.uptime-seg {
+  flex: 1;
+  border-radius: 3px;
+  min-width: 3px;
+  transition: opacity 0.15s;
+}
+.uptime-seg:hover { opacity: 0.75; cursor: pointer; }
+.uptime-up { background: var(--green); }
+.uptime-degraded { background: var(--amber); }
+.uptime-down { background: var(--red); }
+.uptime-none { background: var(--border); }
+.uptime-rt-wrap { overflow-x: auto; }
+.uptime-rt-chart { width: 100%; height: 80px; }
+
 /* ===== Inline Bar ===== */
 .bar-inline {
   display: inline-block;

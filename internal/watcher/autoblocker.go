@@ -49,6 +49,13 @@ func (ab *AutoBlocker) Load(rules []db.ListEnabledAutoblockRulesRow) {
 	ab.mu.Unlock()
 }
 
+// ResetDedup clears the in-memory dedup map so pruned IPs can be re-blocked.
+func (ab *AutoBlocker) ResetDedup() {
+	ab.mu.Lock()
+	ab.blocked = make(map[string]bool)
+	ab.mu.Unlock()
+}
+
 // Check tests the URI against enabled autoblock rules. If matched,
 // the client IP is added to blocked_ips and synced to Caddy.
 func (ab *AutoBlocker) Check(uri, clientIP string) {

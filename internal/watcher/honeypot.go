@@ -49,6 +49,13 @@ func (hc *HoneypotChecker) Load(rules []db.ListEnabledHoneypotsRow) {
 	hc.mu.Unlock()
 }
 
+// ResetDedup clears the in-memory dedup map so pruned IPs can be re-blocked.
+func (hc *HoneypotChecker) ResetDedup() {
+	hc.mu.Lock()
+	hc.blocked = make(map[string]bool)
+	hc.mu.Unlock()
+}
+
 // Check tests the URI against enabled honeypot paths. If matched,
 // the client IP is added to blocked_ips and synced to Caddy.
 func (hc *HoneypotChecker) Check(uri, clientIP string) {

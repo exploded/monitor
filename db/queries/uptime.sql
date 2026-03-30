@@ -1,3 +1,7 @@
+-- name: GetUptimeTarget :one
+SELECT id, name, url, interval_seconds, expected_status, enabled, created_at
+FROM uptime_targets WHERE id = ?;
+
 -- name: ListUptimeTargets :many
 SELECT id, name, url, interval_seconds, expected_status, enabled, created_at
 FROM uptime_targets ORDER BY name;
@@ -33,6 +37,12 @@ WHERE target_id = ? AND ts >= ?;
 SELECT COALESCE(ROUND(AVG(response_time_ms), 1), 0) AS avg_ms
 FROM uptime_checks
 WHERE target_id = ? AND ts >= ? AND error = '';
+
+-- name: UptimeChecksSince :many
+SELECT id, target_id, ts, status, response_time_ms, error, created_at
+FROM uptime_checks
+WHERE target_id = sqlc.arg(target_id) AND ts >= sqlc.arg(since)
+ORDER BY ts;
 
 -- name: DeleteUptimeChecksBefore :exec
 DELETE FROM uptime_checks WHERE ts < ?;

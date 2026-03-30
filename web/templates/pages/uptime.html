@@ -35,7 +35,7 @@
         <td>
           {{if .IsUp}}<span class="status-dot status-up"></span>{{else}}<span class="status-dot status-down"></span>{{end}}
         </td>
-        <td><strong>{{.Target.Name}}</strong></td>
+        <td><a href="/uptime/{{.Target.ID}}"><strong>{{.Target.Name}}</strong></a></td>
         <td class="uri-cell" title="{{.Target.Url}}">{{truncate .Target.Url 40}}</td>
         <td>{{printf "%.1f" .UptimePct}}%</td>
         <td>{{printf "%.0f" .AvgMs}} ms</td>
