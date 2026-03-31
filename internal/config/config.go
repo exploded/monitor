@@ -19,7 +19,8 @@ type Config struct {
 	LogAPIKey         string
 	DiscordWebhookURL string
 	GeoIPDBPath       string
-	IgnoreHosts       []string
+	IgnoreHosts      []string
+	IgnoreUserAgents []string
 }
 
 func Load() Config {
@@ -44,7 +45,8 @@ func Load() Config {
 		LogAPIKey:         os.Getenv("LOG_API_KEY"),
 		DiscordWebhookURL: os.Getenv("DISCORD_WEBHOOK_URL"),
 		GeoIPDBPath:       envOr("GEOIP_DB_PATH", "GeoLite2-City.mmdb"),
-		IgnoreHosts:       parseList(os.Getenv("IGNORE_HOSTS")),
+		IgnoreHosts:      parseList(os.Getenv("IGNORE_HOSTS")),
+		IgnoreUserAgents: parseList(os.Getenv("IGNORE_USER_AGENTS")),
 	}
 }
 

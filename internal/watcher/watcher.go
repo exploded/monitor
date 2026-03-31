@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
@@ -51,13 +52,18 @@ type Watcher struct {
 	rowTmpl          *template.Template
 	ingestCh         chan db.InsertRequestParams
 	ignoreHosts      map[string]bool
+	ignoreUAs        []string // lowercase substrings to match against User-Agent
 }
 
 // New creates a Watcher. The rowTmpl is used to render live log HTML for SSE.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template, ignoreHosts []string) *Watcher {
+func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template, ignoreHosts []string, ignoreUserAgents []string) *Watcher {
 	ih := make(map[string]bool, len(ignoreHosts))
 	for _, h := range ignoreHosts {
 		ih[h] = true
+	}
+	lowerUAs := make([]string, len(ignoreUserAgents))
+	for i, ua := range ignoreUserAgents {
+		lowerUAs[i] = strings.ToLower(ua)
 	}
 	return &Watcher{
 		logPath:         logPath,
@@ -71,6 +77,7 @@ func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher 
 		rowTmpl:         rowTmpl,
 		ingestCh:        make(chan db.InsertRequestParams, 256),
 		ignoreHosts:     ih,
+		ignoreUAs:       lowerUAs,
 	}
 }
 
@@ -151,6 +158,16 @@ func (w *Watcher) processLine(line []byte) {
 	ua := ""
 	if agents, ok := entry.Request.Headers["User-Agent"]; ok && len(agents) > 0 {
 		ua = agents[0]
+	}
+
+	// Skip ignored user agents (e.g. uptime pings)
+	if len(w.ignoreUAs) > 0 {
+		lowerUA := strings.ToLower(ua)
+		for _, substr := range w.ignoreUAs {
+			if strings.Contains(lowerUA, substr) {
+				return
+			}
+		}
 	}
 
 	// Convert timestamp
