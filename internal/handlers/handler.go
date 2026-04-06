@@ -16,7 +16,6 @@ type Handler struct {
 	q               *db.Queries
 	rawDB           *sql.DB
 	pages           PageTemplates
-	hub             *Hub
 	matcher         *watcher.BotMatcher
 	autoBlocker     *watcher.AutoBlocker
 	honeypotChecker *watcher.HoneypotChecker
@@ -25,12 +24,11 @@ type Handler struct {
 }
 
 // New creates a Handler with all dependencies.
-func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, hub *Hub, matcher *watcher.BotMatcher, autoBlocker *watcher.AutoBlocker, honeypotChecker *watcher.HoneypotChecker, alertEngine *alerts.Engine, cfg *config.Config) *Handler {
+func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.BotMatcher, autoBlocker *watcher.AutoBlocker, honeypotChecker *watcher.HoneypotChecker, alertEngine *alerts.Engine, cfg *config.Config) *Handler {
 	return &Handler{
 		q:               q,
 		rawDB:           rawDB,
 		pages:           pages,
-		hub:             hub,
 		matcher:         matcher,
 		autoBlocker:     autoBlocker,
 		honeypotChecker: honeypotChecker,

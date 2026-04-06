@@ -2,13 +2,10 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 	_ "time/tzdata" // embed timezone data for static binary
@@ -60,15 +57,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Load the live log row template for the watcher to render SSE events.
-	// This needs the same funcMap as the main templates.
-	rowTmpl, err := loadRowTemplate()
-	if err != nil {
-		slog.Error("load row template", "err", err)
-		os.Exit(1)
-	}
-
-	hub := handlers.NewHub()
 
 	// Bot matcher
 	matcher := watcher.NewBotMatcher()
@@ -108,7 +96,7 @@ func main() {
 	// Alert engine
 	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
 
-	h := handlers.New(sqlDB, q, pages, hub, matcher, autoBlocker, honeypotChecker, alertEngine, &cfg)
+	h := handlers.New(sqlDB, q, pages, matcher, autoBlocker, honeypotChecker, alertEngine, &cfg)
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -116,7 +104,7 @@ func main() {
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
-		w := watcher.New(cfg.LogPath, sqlDB, q, hub, matcher, autoBlocker, honeypotChecker, geoResolver, rowTmpl, cfg.IgnoreHosts, cfg.IgnoreUserAgents)
+		w := watcher.New(cfg.LogPath, sqlDB, q, matcher, autoBlocker, honeypotChecker, geoResolver, cfg.IgnoreHosts, cfg.IgnoreUserAgents)
 		go func() {
 			if err := w.Run(ctx); err != nil && err != context.Canceled {
 				slog.Error("watcher stopped", "err", err)
@@ -188,7 +176,6 @@ func main() {
 
 	// Dashboard
 	mux.HandleFunc("GET /", h.Dashboard)
-	mux.HandleFunc("GET /stream", h.LiveLogStream)
 	mux.HandleFunc("GET /partials/traffic", h.TrafficOverview)
 	mux.HandleFunc("GET /partials/recent", h.RecentRequests)
 
@@ -281,42 +268,4 @@ func main() {
 		slog.Error("shutdown", "err", err)
 	}
 	slog.Info("server stopped")
-}
-
-// loadRowTemplate loads the _live_log_row template with the same funcMap
-// used by the main template engine, so the watcher can render SSE HTML.
-func loadRowTemplate() (*template.Template, error) {
-	mel, err := time.LoadLocation("Australia/Melbourne")
-	if err != nil {
-		return nil, fmt.Errorf("load timezone: %w", err)
-	}
-	funcMap := template.FuncMap{
-		"statusClass": func(status int64) string {
-			switch {
-			case status >= 500:
-				return "status-5xx"
-			case status >= 400:
-				return "status-4xx"
-			case status >= 300:
-				return "status-3xx"
-			default:
-				return "status-2xx"
-			}
-		},
-		"formatTime": func(t time.Time) string {
-			return t.In(mel).Format("15:04:05")
-		},
-		"truncate": func(s string, n int) string {
-			if len(s) <= n {
-				return s
-			}
-			return s[:n] + "..."
-		},
-		"statusText": func(status int64) string {
-			return http.StatusText(int(status))
-		},
-	}
-
-	path := filepath.Join("web", "templates", "pages", "_live_log_row.html")
-	return template.New("").Funcs(funcMap).ParseFiles(path)
 }

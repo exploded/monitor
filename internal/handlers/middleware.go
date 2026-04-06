@@ -67,15 +67,3 @@ func (sw *statusWriter) WriteHeader(code int) {
 	sw.status = code
 	sw.ResponseWriter.WriteHeader(code)
 }
-
-// Flush implements http.Flusher so SSE streaming works through middleware.
-func (sw *statusWriter) Flush() {
-	if f, ok := sw.ResponseWriter.(http.Flusher); ok {
-		f.Flush()
-	}
-}
-
-// Unwrap allows http.ResponseController to access the underlying ResponseWriter.
-func (sw *statusWriter) Unwrap() http.ResponseWriter {
-	return sw.ResponseWriter
-}

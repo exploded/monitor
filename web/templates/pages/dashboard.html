@@ -13,41 +13,10 @@
     {{template "_geo_map" .}}
   </section>
 
-  {{/* Live Log — SSE stream */}}
-  <section class="panel panel-wide">
-    <h2>Live Log</h2>
-    <div class="table-wrap">
-      <table class="log-table">
-        <thead>
-          <tr>
-            <th>Time</th>
-            <th>Host</th>
-            <th>IP</th>
-            <th>Method</th>
-            <th>URI</th>
-            <th>Status</th>
-            <th>User Agent</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="live-log-body" hx-ext="sse" sse-connect="/stream" sse-swap="log" hx-swap="afterbegin">
-          {{range .Extra.Recent}}
-          <tr class="{{statusClass .Status}}{{if eq .IsBot 1}} bot-row{{end}}">
-            <td>{{formatTime .Ts}}</td>
-            <td>{{.Host}}</td>
-            <td>{{.ClientIp}}</td>
-            <td>{{.Method}}</td>
-            <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
-            <td title="{{statusText .Status}}">{{.Status}}</td>
-            <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
-            <td>
-              <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from live log"}' hx-target="#ip-list" hx-swap="innerHTML" hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful){this.textContent='Blocked';this.disabled=true;this.classList.replace('btn-block','btn-blocked')}">Block</button>
-            </td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
-    </div>
+  {{/* Recent Requests — polls every 10s */}}
+  <section class="panel panel-wide" id="recent-requests"
+    hx-get="/partials/recent" hx-trigger="every 10s" hx-swap="innerHTML">
+    {{template "_recent_requests" .}}
   </section>
 
   {{/* Bot Management */}}

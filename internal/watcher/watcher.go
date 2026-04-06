@@ -6,7 +6,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"html/template"
 	"io"
 	"log/slog"
 	"math"
@@ -17,11 +16,6 @@ import (
 	db "github.com/exploded/monitor/db/sqlc"
 	"github.com/exploded/monitor/internal/geoip"
 )
-
-// Broadcaster sends data to connected SSE clients.
-type Broadcaster interface {
-	Broadcast(data string)
-}
 
 // CaddyLogEntry matches Caddy's JSON structured access log format.
 type CaddyLogEntry struct {
@@ -39,24 +33,22 @@ type CaddyLogEntry struct {
 }
 
 // Watcher tails a Caddy access log file, parses JSON entries,
-// and writes them to SQLite while broadcasting to SSE clients.
+// and writes them to SQLite.
 type Watcher struct {
 	logPath          string
 	rawDB            *sql.DB
 	q                *db.Queries
-	hub              Broadcaster
 	matcher          *BotMatcher
 	autoBlocker      *AutoBlocker
 	honeypotChecker  *HoneypotChecker
 	geo              *geoip.Resolver
-	rowTmpl          *template.Template
 	ingestCh         chan db.InsertRequestParams
 	ignoreHosts      map[string]bool
 	ignoreUAs        []string // lowercase substrings to match against User-Agent
 }
 
-// New creates a Watcher. The rowTmpl is used to render live log HTML for SSE.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, rowTmpl *template.Template, ignoreHosts []string, ignoreUserAgents []string) *Watcher {
+// New creates a Watcher.
+func New(logPath string, rawDB *sql.DB, q *db.Queries, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, ignoreHosts []string, ignoreUserAgents []string) *Watcher {
 	ih := make(map[string]bool, len(ignoreHosts))
 	for _, h := range ignoreHosts {
 		ih[h] = true
@@ -69,12 +61,10 @@ func New(logPath string, rawDB *sql.DB, q *db.Queries, hub Broadcaster, matcher 
 		logPath:         logPath,
 		rawDB:           rawDB,
 		q:               q,
-		hub:             hub,
 		matcher:         matcher,
 		autoBlocker:     autoBlocker,
 		honeypotChecker: honeypotChecker,
 		geo:             geo,
-		rowTmpl:         rowTmpl,
 		ingestCh:        make(chan db.InsertRequestParams, 256),
 		ignoreHosts:     ih,
 		ignoreUAs:       lowerUAs,
@@ -216,21 +206,6 @@ func (w *Watcher) processLine(line []byte) {
 		slog.Warn("watcher ingest channel full, dropping entry")
 	}
 
-	// Broadcast to SSE clients
-	w.broadcastRow(params)
-}
-
-func (w *Watcher) broadcastRow(p db.InsertRequestParams) {
-	if w.rowTmpl == nil || w.hub == nil {
-		return
-	}
-
-	var buf bytes.Buffer
-	if err := w.rowTmpl.ExecuteTemplate(&buf, "_live_log_row", p); err != nil {
-		slog.Error("watcher render row", "err", err)
-		return
-	}
-	w.hub.Broadcast(buf.String())
 }
 
 func (w *Watcher) batchWriter(ctx context.Context) {
