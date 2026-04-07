@@ -149,7 +149,7 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 				return "Yahoo"
 			case strings.Contains(r, "facebook.") || strings.Contains(r, "fb."):
 				return "Facebook"
-			case strings.Contains(r, "twitter.") || strings.Contains(r, "t.co"):
+			case strings.Contains(r, "twitter.") || strings.Contains(r, "t.co/") || r == "https://t.co" || r == "http://t.co":
 				return "Twitter/X"
 			case strings.Contains(r, "reddit."):
 				return "Reddit"
