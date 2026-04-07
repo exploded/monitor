@@ -1,10 +1,22 @@
 {{define "content"}}
-<h1>Recent Requests</h1>
+<div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem">
+  <h1 style="margin:0">Requests</h1>
+  <select id="req-range" style="padding:0.35rem 0.5rem;background:var(--panel);color:var(--fg);border:1px solid var(--border);border-radius:4px">
+    <option value="6h"{{if eq .Extra.Range "6h"}} selected{{end}}>Last 6 hours</option>
+    <option value="12h"{{if eq .Extra.Range "12h"}} selected{{end}}>Last 12 hours</option>
+    <option value="24h"{{if eq .Extra.Range "24h"}} selected{{end}}>Last 24 hours</option>
+    <option value="48h"{{if eq .Extra.Range "48h"}} selected{{end}}>Last 48 hours</option>
+    <option value="7d"{{if eq .Extra.Range "7d"}} selected{{end}}>Last 7 days</option>
+  </select>
+</div>
 
-<div class="dashboard-grid">
-  <section class="panel panel-wide" id="recent-requests"
-    hx-get="/partials/recent" hx-trigger="every 10s" hx-swap="innerHTML">
-    {{template "_recent_requests" .}}
-  </section>
+<script>
+document.getElementById('req-range').addEventListener('change', function() {
+  htmx.ajax('GET', '/partials/requests?range=' + this.value, {target:'#requests-data', swap:'innerHTML'});
+});
+</script>
+
+<div id="requests-data">
+  {{template "_requests_data" .}}
 </div>
 {{end}}

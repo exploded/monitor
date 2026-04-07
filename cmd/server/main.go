@@ -177,10 +177,10 @@ func main() {
 	// Dashboard
 	mux.HandleFunc("GET /", h.Dashboard)
 	mux.HandleFunc("GET /partials/traffic", h.TrafficOverview)
-	mux.HandleFunc("GET /partials/recent", h.RecentRequests)
 
 	// Requests
 	mux.HandleFunc("GET /requests", h.RecentRequestsPage)
+	mux.HandleFunc("GET /partials/requests", h.RequestsPartial)
 
 	// Referrers
 	mux.HandleFunc("GET /referrers", h.ReferrersPage)

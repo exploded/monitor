@@ -18,6 +18,10 @@ SELECT COUNT(DISTINCT client_ip) FROM requests WHERE ts >= ?;
 SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests ORDER BY id DESC LIMIT ?;
 
+-- name: RecentRequestsSince :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests WHERE ts >= ? ORDER BY id DESC LIMIT ?;
+
 -- name: TopReferrersSince :many
 SELECT referer, COUNT(*) AS cnt
 FROM requests WHERE ts >= ? AND referer != ''

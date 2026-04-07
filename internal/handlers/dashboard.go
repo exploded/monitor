@@ -230,26 +230,35 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 // RecentRequestsPage renders the full recent requests page.
 func (h *Handler) RecentRequestsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	recent, _ := h.q.RecentRequests(ctx, 50)
+	since, rng := parseRange(r)
+
+	total, _ := h.q.CountRequestsSince(ctx, since)
+	bots, _ := h.q.CountBotRequestsSince(ctx, since)
+	uniqueIPs, _ := h.q.CountUniqueIPsSince(ctx, since)
+	recent, _ := h.q.RecentRequestsSince(ctx, db.RecentRequestsSinceParams{Ts: since, Limit: 100})
 
 	h.render(w, r, "requests", "", PageData{
 		Title: "Requests",
 		Extra: map[string]any{
-			"Recent": recent,
+			"Total":      total,
+			"Bots":       bots,
+			"UniqueIPs":  uniqueIPs,
+			"Recent":     recent,
+			"Range":      rng,
+			"RangeLabel": rangeLabels[rng],
 		},
 	})
 }
 
-// RecentRequests renders the recent requests table (polled by HTMX).
-func (h *Handler) RecentRequests(w http.ResponseWriter, r *http.Request) {
+// RequestsPartial renders the requests data partial (for HTMX range updates).
+func (h *Handler) RequestsPartial(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	recent, _ := h.q.RecentRequests(ctx, 50)
+	since, rng := parseRange(r)
 
-	data := PageData{
-		Extra: map[string]any{
-			"Recent": recent,
-		},
-	}
+	total, _ := h.q.CountRequestsSince(ctx, since)
+	bots, _ := h.q.CountBotRequestsSince(ctx, since)
+	uniqueIPs, _ := h.q.CountUniqueIPsSince(ctx, since)
+	recent, _ := h.q.RecentRequestsSince(ctx, db.RecentRequestsSinceParams{Ts: since, Limit: 100})
 
 	tmpl, ok := h.pages["requests"]
 	if !ok {
@@ -257,7 +266,14 @@ func (h *Handler) RecentRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := tmpl.ExecuteTemplate(w, "_recent_requests", data); err != nil {
-		slog.Error("render recent requests", "err", err)
+	data := PageData{Extra: map[string]any{
+		"Total":      total,
+		"Bots":       bots,
+		"UniqueIPs":  uniqueIPs,
+		"Recent":     recent,
+		"RangeLabel": rangeLabels[rng],
+	}}
+	if err := tmpl.ExecuteTemplate(w, "_requests_data", data); err != nil {
+		slog.Error("render requests partial", "err", err)
 	}
 }

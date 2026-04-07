@@ -186,6 +186,67 @@ func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]RecentRequ
 	return items, nil
 }
 
+const recentRequestsSince = `-- name: RecentRequestsSince :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests WHERE ts >= ? ORDER BY id DESC LIMIT ?
+`
+
+type RecentRequestsSinceParams struct {
+	Ts    time.Time `json:"ts"`
+	Limit int64     `json:"limit"`
+}
+
+type RecentRequestsSinceRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
+}
+
+func (q *Queries) RecentRequestsSince(ctx context.Context, arg RecentRequestsSinceParams) ([]RecentRequestsSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, recentRequestsSince, arg.Ts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RecentRequestsSinceRow
+	for rows.Next() {
+		var i RecentRequestsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ts,
+			&i.Host,
+			&i.ClientIp,
+			&i.Method,
+			&i.Uri,
+			&i.Status,
+			&i.Size,
+			&i.UserAgent,
+			&i.DurationMs,
+			&i.IsBot,
+			&i.Referer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const referrerRequestsByHost = `-- name: ReferrerRequestsByHost :many
 SELECT id, ts, host, client_ip, method, uri, status, user_agent, referer
 FROM requests
