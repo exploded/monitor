@@ -29,17 +29,12 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	byHost, _ := h.q.RequestsByHostSince(ctx, since)
 	statusCodes, _ := h.q.StatusCodesSince(ctx, since)
 	recent, _ := h.q.RecentRequests(ctx, 50)
-	botPatterns, _ := h.q.ListBotPatterns(ctx)
-	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
-	autoblockRules, _ := h.q.ListAutoblockRules(ctx)
-	honeypots, _ := h.q.ListHoneypots(ctx)
-	alertRules, _ := h.q.ListAlertRules(ctx)
-	alertLogs, _ := h.q.RecentAlertLogs(ctx, 20)
 	topCountries, _ := h.q.TopCountriesSince(ctx, db.TopCountriesSinceParams{Ts: since, Limit: 15})
-	anomalies, _ := h.q.RecentAnomalies(ctx, 20)
+	topReferrers, _ := h.q.TopReferrersSince(ctx, db.TopReferrersSinceParams{Ts: since, Limit: 10})
 
 	// IP reputation scores
 	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
+	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
 	blockedSet := make(map[string]bool, len(blockedIPs))
 	for _, ip := range blockedIPs {
 		blockedSet[ip.Ip] = true
@@ -66,9 +61,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			ipScores[row.ClientIp] = score.Value
 		}
 	}
-	appErrors, _ := h.q.RecentAppErrors(ctx, 20)
-	appErrorCount, _ := h.q.CountAppErrorsSince(ctx, since)
-	appLogCount, _ := h.q.CountAppLogsSince(ctx, since)
 
 	// Sparklines for initial dashboard load
 	sparkSince := time.Now().UTC().Add(-60 * time.Minute)
@@ -110,27 +102,18 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "dashboard", "", PageData{
 		Title: "Dashboard",
 		Extra: map[string]any{
-			"Total":          total,
-			"Bots":           bots,
-			"UniqueIPs":      uniqueIPs,
-			"TopIPs":         topIPs,
-			"TopUAs":         topUAs,
-			"ByHost":         byHost,
-			"StatusCodes":    statusCodes,
-			"Recent":         recent,
-			"BotPatterns":    botPatterns,
-			"BlockedIPs":     blockedIPs,
-			"AutoblockRules": autoblockRules,
-			"Honeypots":      honeypots,
-			"AppErrors":      appErrors,
-			"AppErrorCount":  appErrorCount,
-			"AppLogCount":    appLogCount,
-			"Sparklines":     sparklines,
-			"IPScores":       ipScores,
-			"AlertRules":     alertRules,
-			"AlertLogs":      alertLogs,
-			"TopCountries":   topCountries,
-			"Anomalies":      anomalies,
+			"Total":         total,
+			"Bots":          bots,
+			"UniqueIPs":     uniqueIPs,
+			"TopIPs":        topIPs,
+			"TopUAs":        topUAs,
+			"ByHost":        byHost,
+			"StatusCodes":   statusCodes,
+			"Recent":        recent,
+			"Sparklines":    sparklines,
+			"IPScores":      ipScores,
+			"TopCountries":  topCountries,
+			"TopReferrers":  topReferrers,
 		},
 	})
 }
@@ -147,6 +130,7 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 	topUAs, _ := h.q.TopUserAgentsSince(ctx, db.TopUserAgentsSinceParams{Ts: since, Limit: 10})
 	byHost, _ := h.q.RequestsByHostSince(ctx, since)
 	statusCodes, _ := h.q.StatusCodesSince(ctx, since)
+	topReferrers, _ := h.q.TopReferrersSince(ctx, db.TopReferrersSinceParams{Ts: since, Limit: 10})
 
 	// IP reputation scores for top IPs
 	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
@@ -228,8 +212,9 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 			"TopUAs":      topUAs,
 			"ByHost":      byHost,
 			"StatusCodes": statusCodes,
-			"Sparklines":  sparklines,
-			"IPScores":    ipScores,
+			"Sparklines":    sparklines,
+			"IPScores":      ipScores,
+			"TopReferrers":  topReferrers,
 		},
 	}
 

@@ -24,7 +24,7 @@ WHERE ts >= ?
 GROUP BY day ORDER BY day DESC;
 
 -- name: SearchRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
@@ -86,7 +86,7 @@ ORDER BY total DESC
 LIMIT ?;
 
 -- name: SearchRequestsExport :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))

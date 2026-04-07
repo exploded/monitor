@@ -49,7 +49,7 @@
           <td>{{if index $scores .ClientIp}}{{threatBadge (index $scores .ClientIp)}}{{end}}</td>
           <td>{{.Cnt}}</td>
           <td>
-            <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from top IPs"}' hx-target="#ip-list" hx-swap="innerHTML" hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful){this.textContent='Blocked';this.disabled=true;this.classList.replace('btn-block','btn-blocked')}">Block</button>
+            <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from top IPs"}' hx-swap="none" hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful){this.textContent='Blocked';this.disabled=true;this.classList.replace('btn-block','btn-blocked')}">Block</button>
           </td>
         </tr>
         {{end}}
@@ -70,6 +70,28 @@
           <td>{{.Cnt}}</td>
           <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
         </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{/* Top Referrers */}}
+  <div class="mini-table">
+    <h3>Top Referrers</h3>
+    <table>
+      <colgroup><col style="width:60%"><col style="width:25%"><col style="width:15%"></colgroup>
+      <thead><tr><th>Referrer</th><th>Source</th><th>Hits</th></tr></thead>
+      <tbody>
+        {{if .Extra.TopReferrers}}
+        {{range .Extra.TopReferrers}}
+        <tr>
+          <td class="ua-cell" title="{{.Referer}}">{{truncate .Referer 50}}</td>
+          <td>{{refererLabel .Referer}}</td>
+          <td>{{.Cnt}}</td>
+        </tr>
+        {{end}}
+        {{else}}
+        <tr><td colspan="3" class="muted">No referrer data yet</td></tr>
         {{end}}
       </tbody>
     </table>

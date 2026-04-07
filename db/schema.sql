@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS requests (
     duration_ms REAL NOT NULL,
     is_bot      INTEGER NOT NULL DEFAULT 0,
     country     TEXT NOT NULL DEFAULT '',
-    city        TEXT NOT NULL DEFAULT ''
+    city        TEXT NOT NULL DEFAULT '',
+    referer     TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts);

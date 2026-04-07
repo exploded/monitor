@@ -60,7 +60,7 @@ func (h *Handler) UnblockIP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) renderIPList(w http.ResponseWriter, ips []db.BlockedIp) {
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

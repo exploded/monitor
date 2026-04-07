@@ -47,6 +47,7 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 	migrations := []string{
 		"ALTER TABLE requests ADD COLUMN country TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE requests ADD COLUMN city TEXT NOT NULL DEFAULT ''",
+		"ALTER TABLE requests ADD COLUMN referer TEXT NOT NULL DEFAULT ''",
 	}
 	for _, m := range migrations {
 		if _, err := d.Exec(m); err != nil {

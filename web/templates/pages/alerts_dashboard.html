@@ -1,0 +1,22 @@
+{{define "content"}}
+<h1>Alerts</h1>
+
+<div class="dashboard-grid">
+  {{/* Alert Rules */}}
+  <section class="panel panel-wide" id="alert-rules">
+    {{template "_alert_rules" .}}
+  </section>
+
+  {{/* Alert Log — polls every 30s */}}
+  <section class="panel panel-wide" id="alert-log"
+    hx-get="/partials/alert-log" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_alert_log" .}}
+  </section>
+
+  {{/* App Errors — polls every 30s */}}
+  <section class="panel panel-wide" id="app-errors"
+    hx-get="/partials/app-errors" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_app_errors" .}}
+  </section>
+</div>
+{{end}}

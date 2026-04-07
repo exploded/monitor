@@ -9,7 +9,7 @@ import (
 // AnomaliesPanel renders the recent anomalies partial.
 func (h *Handler) AnomaliesPanel(w http.ResponseWriter, r *http.Request) {
 	anomalies, _ := h.q.RecentAnomalies(r.Context(), 20)
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
@@ -31,7 +31,7 @@ func (h *Handler) AcknowledgeAnomaly(w http.ResponseWriter, r *http.Request) {
 	h.q.AcknowledgeAnomaly(r.Context(), id)
 
 	anomalies, _ := h.q.RecentAnomalies(r.Context(), 20)
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

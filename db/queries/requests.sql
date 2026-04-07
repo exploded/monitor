@@ -1,6 +1,6 @@
 -- name: InsertRequest :exec
-INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city, referer)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: CountRequests :one
 SELECT COUNT(*) FROM requests;
@@ -15,8 +15,13 @@ SELECT COUNT(*) FROM requests WHERE ts >= ? AND is_bot = 1;
 SELECT COUNT(DISTINCT client_ip) FROM requests WHERE ts >= ?;
 
 -- name: RecentRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests ORDER BY id DESC LIMIT ?;
+
+-- name: TopReferrersSince :many
+SELECT referer, COUNT(*) AS cnt
+FROM requests WHERE ts >= ? AND referer != ''
+GROUP BY referer ORDER BY cnt DESC LIMIT ?;
 
 -- name: TopIPsSince :many
 SELECT client_ip, COUNT(*) AS cnt

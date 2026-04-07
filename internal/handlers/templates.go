@@ -136,6 +136,27 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 			}
 			return template.HTML(`<span class="threat-badge ` + cls + `">` + strconv.Itoa(score) + `</span>`)
 		},
+		"refererLabel": func(ref string) string {
+			r := strings.ToLower(ref)
+			switch {
+			case strings.Contains(r, "google."):
+				return "Google"
+			case strings.Contains(r, "bing."):
+				return "Bing"
+			case strings.Contains(r, "duckduckgo."):
+				return "DuckDuckGo"
+			case strings.Contains(r, "yahoo."):
+				return "Yahoo"
+			case strings.Contains(r, "facebook.") || strings.Contains(r, "fb."):
+				return "Facebook"
+			case strings.Contains(r, "twitter.") || strings.Contains(r, "t.co"):
+				return "Twitter/X"
+			case strings.Contains(r, "reddit."):
+				return "Reddit"
+			default:
+				return ref
+			}
+		},
 		"divFloat": func(a, b int64) float64 {
 			if b == 0 {
 				return 0

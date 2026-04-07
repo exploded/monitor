@@ -64,8 +64,8 @@ func (q *Queries) DeleteRequestsBefore(ctx context.Context, ts time.Time) error 
 }
 
 const insertRequest = `-- name: InsertRequest :exec
-INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city, referer)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertRequestParams struct {
@@ -81,6 +81,7 @@ type InsertRequestParams struct {
 	IsBot      int64     `json:"is_bot"`
 	Country    string    `json:"country"`
 	City       string    `json:"city"`
+	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) error {
@@ -97,12 +98,13 @@ func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) er
 		arg.IsBot,
 		arg.Country,
 		arg.City,
+		arg.Referer,
 	)
 	return err
 }
 
 const recentRequests = `-- name: RecentRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests ORDER BY id DESC LIMIT ?
 `
 
@@ -118,6 +120,7 @@ type RecentRequestsRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]RecentRequestsRow, error) {
@@ -141,6 +144,7 @@ func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]RecentRequ
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
+			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -249,6 +253,45 @@ func (q *Queries) TopIPsSince(ctx context.Context, arg TopIPsSinceParams) ([]Top
 	for rows.Next() {
 		var i TopIPsSinceRow
 		if err := rows.Scan(&i.ClientIp, &i.Cnt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const topReferrersSince = `-- name: TopReferrersSince :many
+SELECT referer, COUNT(*) AS cnt
+FROM requests WHERE ts >= ? AND referer != ''
+GROUP BY referer ORDER BY cnt DESC LIMIT ?
+`
+
+type TopReferrersSinceParams struct {
+	Ts    time.Time `json:"ts"`
+	Limit int64     `json:"limit"`
+}
+
+type TopReferrersSinceRow struct {
+	Referer string `json:"referer"`
+	Cnt     int64  `json:"cnt"`
+}
+
+func (q *Queries) TopReferrersSince(ctx context.Context, arg TopReferrersSinceParams) ([]TopReferrersSinceRow, error) {
+	rows, err := q.db.QueryContext(ctx, topReferrersSince, arg.Ts, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []TopReferrersSinceRow
+	for rows.Next() {
+		var i TopReferrersSinceRow
+		if err := rows.Scan(&i.Referer, &i.Cnt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

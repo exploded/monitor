@@ -150,6 +150,12 @@ func (w *Watcher) processLine(line []byte) {
 		ua = agents[0]
 	}
 
+	// Extract referer
+	referer := ""
+	if refs, ok := entry.Request.Headers["Referer"]; ok && len(refs) > 0 {
+		referer = refs[0]
+	}
+
 	// Skip ignored user agents (e.g. uptime pings)
 	if len(w.ignoreUAs) > 0 {
 		lowerUA := strings.ToLower(ua)
@@ -197,6 +203,7 @@ func (w *Watcher) processLine(line []byte) {
 		IsBot:      isBotInt,
 		Country:    country,
 		City:       city,
+		Referer:    referer,
 	}
 
 	// Send to batch writer

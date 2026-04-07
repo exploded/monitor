@@ -93,7 +93,7 @@ func (h *Handler) refreshHoneypotChecker(ctx context.Context) {
 }
 
 func (h *Handler) renderHoneypotList(w http.ResponseWriter, honeypots []db.Honeypot) {
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

@@ -93,7 +93,7 @@ func (h *Handler) refreshAutoBlocker(ctx context.Context) {
 }
 
 func (h *Handler) renderAutoblockList(w http.ResponseWriter, rules []db.AutoblockRule) {
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

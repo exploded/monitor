@@ -390,7 +390,7 @@ func (q *Queries) MinutelyRequestCountsByHost(ctx context.Context, ts time.Time)
 }
 
 const searchRequests = `-- name: SearchRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -426,6 +426,7 @@ type SearchRequestsRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) ([]SearchRequestsRow, error) {
@@ -458,6 +459,7 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
+			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -473,7 +475,7 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 }
 
 const searchRequestsExport = `-- name: SearchRequestsExport :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -507,6 +509,7 @@ type SearchRequestsExportRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsExportParams) ([]SearchRequestsExportRow, error) {
@@ -537,6 +540,7 @@ func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsEx
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
+			&i.Referer,
 		); err != nil {
 			return nil, err
 		}

@@ -1,0 +1,31 @@
+{{define "content"}}
+<h1>Security</h1>
+
+<div class="dashboard-grid">
+  {{/* Bot Management */}}
+  <section class="panel" id="bot-list">
+    {{template "_bot_list" .}}
+  </section>
+
+  {{/* IP Blocklist */}}
+  <section class="panel" id="ip-list">
+    {{template "_ip_list" .}}
+  </section>
+
+  {{/* Auto-Block Rules */}}
+  <section class="panel panel-wide" id="autoblock-list">
+    {{template "_autoblock_list" .}}
+  </section>
+
+  {{/* Honeypots */}}
+  <section class="panel panel-wide" id="honeypot-list">
+    {{template "_honeypot_list" .}}
+  </section>
+
+  {{/* Anomalies — polls every 30s */}}
+  <section class="panel panel-wide" id="anomalies"
+    hx-get="/partials/anomalies" hx-trigger="every 30s" hx-swap="innerHTML">
+    {{template "_anomalies" .}}
+  </section>
+</div>
+{{end}}

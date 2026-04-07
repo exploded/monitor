@@ -120,7 +120,7 @@ func (h *Handler) AppLogDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["alerts_dashboard"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
@@ -153,7 +153,7 @@ func (h *Handler) AppErrorsPanel(w http.ResponseWriter, r *http.Request) {
 		slog.Error("query count app logs", "err", err)
 	}
 
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["alerts_dashboard"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

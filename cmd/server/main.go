@@ -179,6 +179,12 @@ func main() {
 	mux.HandleFunc("GET /partials/traffic", h.TrafficOverview)
 	mux.HandleFunc("GET /partials/recent", h.RecentRequests)
 
+	// Security
+	mux.HandleFunc("GET /security", h.Security)
+
+	// Alerts dashboard
+	mux.HandleFunc("GET /alerts/dashboard", h.AlertsDashboard)
+
 	// Bot management
 	mux.HandleFunc("GET /bots", h.ListBots)
 	mux.HandleFunc("POST /bots", h.CreateBot)

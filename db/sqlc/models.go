@@ -102,6 +102,7 @@ type Request struct {
 	IsBot      int64     `json:"is_bot"`
 	Country    string    `json:"country"`
 	City       string    `json:"city"`
+	Referer    string    `json:"referer"`
 }
 
 type UptimeCheck struct {

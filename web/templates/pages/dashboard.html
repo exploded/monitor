@@ -18,48 +18,5 @@
     hx-get="/partials/recent" hx-trigger="every 10s" hx-swap="innerHTML">
     {{template "_recent_requests" .}}
   </section>
-
-  {{/* Bot Management */}}
-  <section class="panel" id="bot-list">
-    {{template "_bot_list" .}}
-  </section>
-
-  {{/* IP Blocklist */}}
-  <section class="panel" id="ip-list">
-    {{template "_ip_list" .}}
-  </section>
-
-  {{/* Auto-Block Rules */}}
-  <section class="panel panel-wide" id="autoblock-list">
-    {{template "_autoblock_list" .}}
-  </section>
-
-  {{/* Honeypots */}}
-  <section class="panel panel-wide" id="honeypot-list">
-    {{template "_honeypot_list" .}}
-  </section>
-
-  {{/* Alert Rules */}}
-  <section class="panel panel-wide" id="alert-rules">
-    {{template "_alert_rules" .}}
-  </section>
-
-  {{/* Alert Log — polls every 30s */}}
-  <section class="panel panel-wide" id="alert-log"
-    hx-get="/partials/alert-log" hx-trigger="every 30s" hx-swap="innerHTML">
-    {{template "_alert_log" .}}
-  </section>
-
-  {{/* Anomalies — polls every 30s */}}
-  <section class="panel panel-wide" id="anomalies"
-    hx-get="/partials/anomalies" hx-trigger="every 30s" hx-swap="innerHTML">
-    {{template "_anomalies" .}}
-  </section>
-
-  {{/* App Errors — polls every 30s */}}
-  <section class="panel panel-wide" id="app-errors"
-    hx-get="/partials/app-errors" hx-trigger="every 30s" hx-swap="innerHTML">
-    {{template "_app_errors" .}}
-  </section>
 </div>
 {{end}}

@@ -85,7 +85,7 @@ func (h *Handler) DeleteAlertRule(w http.ResponseWriter, r *http.Request) {
 // AlertLogPanel renders the recent alert log partial.
 func (h *Handler) AlertLogPanel(w http.ResponseWriter, r *http.Request) {
 	logs, _ := h.q.RecentAlertLogs(r.Context(), 20)
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["alerts_dashboard"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
@@ -98,7 +98,7 @@ func (h *Handler) AlertLogPanel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) renderAlertRules(w http.ResponseWriter, rules []db.AlertRule) {
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["alerts_dashboard"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

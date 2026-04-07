@@ -96,7 +96,7 @@ func (h *Handler) refreshBotMatcher(ctx context.Context) {
 }
 
 func (h *Handler) renderBotList(w http.ResponseWriter, patterns []db.BotPattern) {
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["security"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
