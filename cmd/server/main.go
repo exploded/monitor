@@ -182,6 +182,10 @@ func main() {
 	// Requests
 	mux.HandleFunc("GET /requests", h.RecentRequestsPage)
 
+	// Referrers
+	mux.HandleFunc("GET /referrers", h.ReferrersPage)
+	mux.HandleFunc("GET /partials/referrers", h.ReferrersPartial)
+
 	// Security
 	mux.HandleFunc("GET /security", h.Security)
 

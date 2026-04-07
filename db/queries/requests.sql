@@ -23,6 +23,25 @@ SELECT referer, COUNT(*) AS cnt
 FROM requests WHERE ts >= ? AND referer != ''
 GROUP BY referer ORDER BY cnt DESC LIMIT ?;
 
+-- name: ReferrersByHost :many
+SELECT referer, COUNT(*) AS cnt
+FROM requests
+WHERE ts >= sqlc.arg(since)
+  AND referer != ''
+  AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
+GROUP BY referer ORDER BY cnt DESC LIMIT sqlc.arg(lim);
+
+-- name: ReferrerRequestsByHost :many
+SELECT id, ts, host, client_ip, method, uri, status, user_agent, referer
+FROM requests
+WHERE ts >= sqlc.arg(since)
+  AND referer != ''
+  AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
+ORDER BY id DESC LIMIT sqlc.arg(lim);
+
+-- name: DistinctHosts :many
+SELECT DISTINCT host FROM requests WHERE ts >= ? ORDER BY host;
+
 -- name: TopIPsSince :many
 SELECT client_ip, COUNT(*) AS cnt
 FROM requests WHERE ts >= ?

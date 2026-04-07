@@ -1,0 +1,63 @@
+{{define "_referrers_data"}}
+<div class="dashboard-grid">
+  <section class="panel panel-wide">
+    <h2>Top Referrers <small>({{.Extra.RangeLabel}}{{if .Extra.SelectedHost}}, {{.Extra.SelectedHost}}{{end}})</small></h2>
+    {{if .Extra.Referrers}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Referrer</th>
+          <th>Source</th>
+          <th>Visits</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Extra.Referrers}}
+        <tr>
+          <td class="ua-cell" title="{{.Referer}}">{{truncate .Referer 80}}</td>
+          <td>{{refererLabel .Referer}}</td>
+          <td>{{.Cnt}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No referrer data for this period.</p>
+    {{end}}
+  </section>
+
+  <section class="panel panel-wide">
+    <h2>Recent Referred Visits</h2>
+    {{if .Extra.RecentReferred}}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Host</th>
+          <th>IP</th>
+          <th>URI</th>
+          <th>Referrer</th>
+          <th>Source</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Extra.RecentReferred}}
+        <tr class="{{statusClass .Status}}">
+          <td>{{formatTime .Ts}}</td>
+          <td>{{.Host}}</td>
+          <td>{{.ClientIp}}</td>
+          <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 50}}</td>
+          <td class="ua-cell" title="{{.Referer}}">{{truncate .Referer 50}}</td>
+          <td>{{refererLabel .Referer}}</td>
+          <td>{{.Status}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="muted">No referred visits for this period.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

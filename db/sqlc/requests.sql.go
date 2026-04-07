@@ -63,6 +63,33 @@ func (q *Queries) DeleteRequestsBefore(ctx context.Context, ts time.Time) error 
 	return err
 }
 
+const distinctHosts = `-- name: DistinctHosts :many
+SELECT DISTINCT host FROM requests WHERE ts >= ? ORDER BY host
+`
+
+func (q *Queries) DistinctHosts(ctx context.Context, ts time.Time) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, distinctHosts, ts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var host string
+		if err := rows.Scan(&host); err != nil {
+			return nil, err
+		}
+		items = append(items, host)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertRequest = `-- name: InsertRequest :exec
 INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, city, referer)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -146,6 +173,109 @@ func (q *Queries) RecentRequests(ctx context.Context, limit int64) ([]RecentRequ
 			&i.IsBot,
 			&i.Referer,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const referrerRequestsByHost = `-- name: ReferrerRequestsByHost :many
+SELECT id, ts, host, client_ip, method, uri, status, user_agent, referer
+FROM requests
+WHERE ts >= ?1
+  AND referer != ''
+  AND (?2 = '' OR host = ?2)
+ORDER BY id DESC LIMIT ?3
+`
+
+type ReferrerRequestsByHostParams struct {
+	Since      time.Time   `json:"since"`
+	HostFilter interface{} `json:"host_filter"`
+	Lim        int64       `json:"lim"`
+}
+
+type ReferrerRequestsByHostRow struct {
+	ID        int64     `json:"id"`
+	Ts        time.Time `json:"ts"`
+	Host      string    `json:"host"`
+	ClientIp  string    `json:"client_ip"`
+	Method    string    `json:"method"`
+	Uri       string    `json:"uri"`
+	Status    int64     `json:"status"`
+	UserAgent string    `json:"user_agent"`
+	Referer   string    `json:"referer"`
+}
+
+func (q *Queries) ReferrerRequestsByHost(ctx context.Context, arg ReferrerRequestsByHostParams) ([]ReferrerRequestsByHostRow, error) {
+	rows, err := q.db.QueryContext(ctx, referrerRequestsByHost, arg.Since, arg.HostFilter, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReferrerRequestsByHostRow
+	for rows.Next() {
+		var i ReferrerRequestsByHostRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ts,
+			&i.Host,
+			&i.ClientIp,
+			&i.Method,
+			&i.Uri,
+			&i.Status,
+			&i.UserAgent,
+			&i.Referer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const referrersByHost = `-- name: ReferrersByHost :many
+SELECT referer, COUNT(*) AS cnt
+FROM requests
+WHERE ts >= ?1
+  AND referer != ''
+  AND (?2 = '' OR host = ?2)
+GROUP BY referer ORDER BY cnt DESC LIMIT ?3
+`
+
+type ReferrersByHostParams struct {
+	Since      time.Time   `json:"since"`
+	HostFilter interface{} `json:"host_filter"`
+	Lim        int64       `json:"lim"`
+}
+
+type ReferrersByHostRow struct {
+	Referer string `json:"referer"`
+	Cnt     int64  `json:"cnt"`
+}
+
+func (q *Queries) ReferrersByHost(ctx context.Context, arg ReferrersByHostParams) ([]ReferrersByHostRow, error) {
+	rows, err := q.db.QueryContext(ctx, referrersByHost, arg.Since, arg.HostFilter, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ReferrersByHostRow
+	for rows.Next() {
+		var i ReferrersByHostRow
+		if err := rows.Scan(&i.Referer, &i.Cnt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
