@@ -12,11 +12,5 @@
   <section class="panel panel-wide" id="geo-map">
     {{template "_geo_map" .}}
   </section>
-
-  {{/* Recent Requests — polls every 10s */}}
-  <section class="panel panel-wide" id="recent-requests"
-    hx-get="/partials/recent" hx-trigger="every 10s" hx-swap="innerHTML">
-    {{template "_recent_requests" .}}
-  </section>
 </div>
 {{end}}

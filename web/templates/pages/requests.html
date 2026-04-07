@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1>Recent Requests</h1>
+
+<div class="dashboard-grid">
+  <section class="panel panel-wide" id="recent-requests"
+    hx-get="/partials/recent" hx-trigger="every 10s" hx-swap="innerHTML">
+    {{template "_recent_requests" .}}
+  </section>
+</div>
+{{end}}

@@ -28,7 +28,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	topUAs, _ := h.q.TopUserAgentsSince(ctx, db.TopUserAgentsSinceParams{Ts: since, Limit: 10})
 	byHost, _ := h.q.RequestsByHostSince(ctx, since)
 	statusCodes, _ := h.q.StatusCodesSince(ctx, since)
-	recent, _ := h.q.RecentRequests(ctx, 50)
 	topCountries, _ := h.q.TopCountriesSince(ctx, db.TopCountriesSinceParams{Ts: since, Limit: 15})
 	topReferrers, _ := h.q.TopReferrersSince(ctx, db.TopReferrersSinceParams{Ts: since, Limit: 10})
 
@@ -109,7 +108,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			"TopUAs":        topUAs,
 			"ByHost":        byHost,
 			"StatusCodes":   statusCodes,
-			"Recent":        recent,
 			"Sparklines":    sparklines,
 			"IPScores":      ipScores,
 			"TopCountries":  topCountries,
@@ -229,6 +227,19 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// RecentRequestsPage renders the full recent requests page.
+func (h *Handler) RecentRequestsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	recent, _ := h.q.RecentRequests(ctx, 50)
+
+	h.render(w, r, "requests", "", PageData{
+		Title: "Requests",
+		Extra: map[string]any{
+			"Recent": recent,
+		},
+	})
+}
+
 // RecentRequests renders the recent requests table (polled by HTMX).
 func (h *Handler) RecentRequests(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -240,7 +251,7 @@ func (h *Handler) RecentRequests(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
-	tmpl, ok := h.pages["dashboard"]
+	tmpl, ok := h.pages["requests"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
