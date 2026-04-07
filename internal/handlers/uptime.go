@@ -67,10 +67,18 @@ func (h *Handler) Uptime(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Uptime chart data
+	uptimeData := h.buildUptimeChartData(r)
+	uptimeCharts, _ := uptimeData.Extra["UptimeCharts"]
+	rangeLabel, _ := uptimeData.Extra["RangeLabel"]
+
 	h.render(w, r, "uptime", "", PageData{
 		Title: "Uptime",
 		Extra: map[string]any{
-			"Statuses": statuses,
+			"Statuses":     statuses,
+			"UptimeCharts": uptimeCharts,
+			"RangeLabel":   rangeLabel,
+			"Range":        "24h",
 		},
 	})
 }

@@ -112,10 +112,6 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	})
 	bwBars := computeBWBars(bwRows)
 
-	// Uptime chart data
-	uptimeData := h.buildUptimeChartData(r)
-	uptimeCharts, _ := uptimeData.Extra["UptimeCharts"]
-
 	step := labelStep(len(bars))
 
 	h.render(w, r, "history", "", PageData{
@@ -130,7 +126,6 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"Range":         rng,
 			"RangeLabel":    rangeLabels[rng],
 			"LabelStep":     step,
-			"UptimeCharts":  uptimeCharts,
 		},
 	})
 }
@@ -495,11 +490,11 @@ func computeUptimeChart(checks []db.UptimeCheck, expectedStatus int64, since tim
 	return segments, rtPoints, maxMs, uptimePct
 }
 
-// UptimeChart renders the uptime chart partial for the history page.
+// UptimeChart renders the uptime chart partial for the uptime page.
 func (h *Handler) UptimeChart(w http.ResponseWriter, r *http.Request) {
 	data := h.buildUptimeChartData(r)
 
-	tmpl, ok := h.pages["history"]
+	tmpl, ok := h.pages["uptime"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return

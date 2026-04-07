@@ -239,6 +239,9 @@ func main() {
 	mux.HandleFunc("GET /partials/anomalies", h.AnomaliesPanel)
 	mux.HandleFunc("POST /anomalies/{id}/acknowledge", h.AcknowledgeAnomaly)
 
+	// App logs page
+	mux.HandleFunc("GET /app-logs", h.AppLogsPage)
+
 	// App logs (API — uses API key, not basic auth)
 	mux.HandleFunc("POST /api/logs", h.IngestAppLogs)
 	mux.HandleFunc("GET /partials/app-errors", h.AppErrorsPanel)

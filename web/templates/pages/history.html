@@ -16,7 +16,7 @@ document.getElementById('range-select').addEventListener('change', function() {
   htmx.ajax('GET', '/partials/hourly?range=' + r, {target:'#hourly-chart', swap:'innerHTML'});
   htmx.ajax('GET', '/partials/latency?range=' + r, {target:'#latency-chart', swap:'innerHTML'});
   htmx.ajax('GET', '/partials/bandwidth?range=' + r, {target:'#bandwidth-chart', swap:'innerHTML'});
-  htmx.ajax('GET', '/partials/uptime?range=' + r, {target:'#uptime-chart', swap:'innerHTML'});
+
 });
 </script>
 
@@ -33,11 +33,6 @@ document.getElementById('range-select').addEventListener('change', function() {
 {{/* Bandwidth */}}
 <section class="panel panel-wide" id="bandwidth-chart">
   {{template "_bandwidth_chart" .}}
-</section>
-
-{{/* Uptime */}}
-<section class="panel panel-wide" id="uptime-chart">
-  {{template "_uptime_chart" .}}
 </section>
 
 {{/* Daily Summary */}}
