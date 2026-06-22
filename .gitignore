@@ -6,3 +6,4 @@ monitor.exe
 .env
 .vscode/
 .claude/settings.local.json
+.local
