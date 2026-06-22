@@ -5,5 +5,5 @@ monitor.exe
 *.db-shm
 .env
 .vscode/
-.claude/settings.local.json
-.local
+.claude/
+.local/
