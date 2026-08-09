@@ -251,6 +251,7 @@ func main() {
 	mux.HandleFunc("POST /uptime", h.CreateUptimeTarget)
 	mux.HandleFunc("POST /uptime/{id}/toggle", h.ToggleUptimeTarget)
 	mux.HandleFunc("GET /uptime/{id}", h.UptimeDetail)
+	mux.HandleFunc("POST /uptime/{id}", h.UpdateUptimeTarget)
 	mux.HandleFunc("POST /uptime/{id}/delete", h.DeleteUptimeTarget)
 
 	// Anomalies

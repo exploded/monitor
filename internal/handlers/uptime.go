@@ -115,6 +115,56 @@ func (h *Handler) CreateUptimeTarget(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
 }
 
+// UpdateUptimeTarget edits an existing target in place. It exists so a target
+// can be repointed -- e.g. from a rendered page to /health -- without deleting
+// and recreating it, which would throw away its check history and daily rollups.
+//
+// The uptime monitor re-reads its target list from the database every 10s, so an
+// edit takes effect on the next tick with no restart.
+func (h *Handler) UpdateUptimeTarget(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("name"))
+	url := strings.TrimSpace(r.FormValue("url"))
+	interval, _ := strconv.ParseInt(r.FormValue("interval"), 10, 64)
+	expected, _ := strconv.ParseInt(r.FormValue("expected_status"), 10, 64)
+
+	if name == "" || url == "" {
+		http.Error(w, "name and url required", http.StatusBadRequest)
+		return
+	}
+	if interval <= 0 {
+		interval = 60
+	}
+	if expected <= 0 {
+		expected = 200
+	}
+
+	if err := h.q.UpdateUptimeTarget(r.Context(), db.UpdateUptimeTargetParams{
+		ID:              id,
+		Name:            name,
+		Url:             url,
+		IntervalSeconds: interval,
+		ExpectedStatus:  expected,
+	}); err != nil {
+		// uptime_targets.url is UNIQUE, so colliding with another target is a
+		// user error, not a server fault -- say which it is.
+		if strings.Contains(strings.ToUpper(err.Error()), "UNIQUE") {
+			http.Error(w, "another target already watches that URL", http.StatusConflict)
+			return
+		}
+		slog.Error("update uptime target", "err", err, "id", id)
+		http.Error(w, "failed to update target", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
+}
+
 // ToggleUptimeTarget toggles the enabled flag.
 func (h *Handler) ToggleUptimeTarget(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

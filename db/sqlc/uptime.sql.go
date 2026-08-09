@@ -305,6 +305,33 @@ func (q *Queries) ToggleUptimeTarget(ctx context.Context, id int64) error {
 	return err
 }
 
+const updateUptimeTarget = `-- name: UpdateUptimeTarget :exec
+UPDATE uptime_targets
+SET name = ?, url = ?, interval_seconds = ?, expected_status = ?
+WHERE id = ?
+`
+
+type UpdateUptimeTargetParams struct {
+	Name            string `json:"name"`
+	Url             string `json:"url"`
+	IntervalSeconds int64  `json:"interval_seconds"`
+	ExpectedStatus  int64  `json:"expected_status"`
+	ID              int64  `json:"id"`
+}
+
+// Edits a target in place so its uptime_checks and uptime_daily history survive.
+// Deleting and recreating would orphan both.
+func (q *Queries) UpdateUptimeTarget(ctx context.Context, arg UpdateUptimeTargetParams) error {
+	_, err := q.db.ExecContext(ctx, updateUptimeTarget,
+		arg.Name,
+		arg.Url,
+		arg.IntervalSeconds,
+		arg.ExpectedStatus,
+		arg.ID,
+	)
+	return err
+}
+
 const uptimeChecksSince = `-- name: UptimeChecksSince :many
 SELECT id, target_id, ts, status, response_time_ms, error
 FROM uptime_checks

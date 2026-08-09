@@ -15,6 +15,24 @@ document.getElementById('uptime-range-select').addEventListener('change', functi
   var r = this.value;
   htmx.ajax('GET', '/partials/uptime?range=' + r, {target:'#uptime-chart', swap:'innerHTML'});
 });
+
+// Edit/Cancel on a target row shows or hides that row's edit form. Delegated
+// from document so it survives the full-body swap that every uptime mutation
+// does -- a listener bound to the buttons themselves would be replaced with them.
+//
+// The guard matters: this script re-runs on every one of those swaps, and a
+// second document listener would toggle the row twice per click, i.e. never.
+if (!window.__uptimeEditBound) {
+  window.__uptimeEditBound = true;
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('[data-edit-toggle]');
+    if (!btn) return;
+    var row = document.getElementById(btn.dataset.editToggle);
+    if (!row) return;
+    row.hidden = !row.hidden;
+    if (!row.hidden) row.querySelector('input[name="url"]').focus();
+  });
+}
 </script>
 
 <section class="panel panel-wide" id="uptime-chart">
@@ -47,6 +65,7 @@ document.getElementById('uptime-range-select').addEventListener('change', functi
         <th>Interval</th>
         <th></th>
         <th></th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -75,7 +94,22 @@ document.getElementById('uptime-range-select').addEventListener('change', functi
           </button>
         </td>
         <td>
+          <button class="btn-sm btn-muted" data-edit-toggle="edit-{{.Target.ID}}">Edit</button>
+        </td>
+        <td>
           <button class="btn-sm btn-danger" hx-post="/uptime/{{.Target.ID}}/delete" hx-target="body" hx-confirm="Delete target '{{.Target.Name}}'?">Delete</button>
+        </td>
+      </tr>
+      <tr id="edit-{{.Target.ID}}" hidden>
+        <td colspan="10">
+          <form class="inline-form" style="margin-bottom:0" hx-post="/uptime/{{.Target.ID}}" hx-target="body">
+            <input type="text" name="name" value="{{.Target.Name}}" required aria-label="Name">
+            <input type="text" name="url" value="{{.Target.Url}}" required aria-label="URL" style="flex:1;min-width:20rem">
+            <input type="number" name="interval" value="{{.Target.IntervalSeconds}}" min="10" style="width:100px" aria-label="Interval (s)">
+            <input type="number" name="expected_status" value="{{.Target.ExpectedStatus}}" style="width:80px" aria-label="Expected status">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn-sm btn-muted" data-edit-toggle="edit-{{.Target.ID}}">Cancel</button>
+          </form>
         </td>
       </tr>
       {{end}}

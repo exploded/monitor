@@ -9,6 +9,13 @@ FROM uptime_targets ORDER BY name;
 -- name: CreateUptimeTarget :exec
 INSERT INTO uptime_targets (name, url, interval_seconds, expected_status) VALUES (?, ?, ?, ?);
 
+-- name: UpdateUptimeTarget :exec
+-- Edits a target in place so its uptime_checks and uptime_daily history survive.
+-- Deleting and recreating would orphan both.
+UPDATE uptime_targets
+SET name = ?, url = ?, interval_seconds = ?, expected_status = ?
+WHERE id = ?;
+
 -- name: DeleteUptimeTarget :exec
 DELETE FROM uptime_targets WHERE id = ?;
 
