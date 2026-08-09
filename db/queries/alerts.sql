@@ -39,5 +39,7 @@ SELECT COUNT(*) FROM app_logs WHERE level = 'ERROR' AND ts >= ?;
 SELECT app, COUNT(*) AS cnt FROM app_logs WHERE level = 'ERROR' AND ts >= ?
 GROUP BY app ORDER BY cnt DESC LIMIT 5;
 
--- name: DeleteAlertLogsBefore :exec
-DELETE FROM alert_log WHERE created_at < ?;
+-- name: DeleteAlertLogsBeforeBatch :execresult
+DELETE FROM alert_log WHERE id IN (
+    SELECT al.id FROM alert_log al WHERE al.created_at < sqlc.arg(cutoff) ORDER BY al.id LIMIT sqlc.arg(batch_size)
+);

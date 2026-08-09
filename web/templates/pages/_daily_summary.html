@@ -1,5 +1,5 @@
 {{define "_daily_summary"}}
-<h2>Daily Summary <small>(last 30 days)</small></h2>
+<h2>Daily Summary <small>(last 90 days)</small></h2>
 {{if .Extra.Daily}}
 <div class="table-wrap">
   <table class="data-table">
@@ -19,11 +19,13 @@
       <tr>
         <td>{{.Day}}</td>
         <td>{{.Total}}</td>
-        <td>{{.Bots.Float64}}</td>
+        {{/* daily_stats columns are NOT NULL, so these are plain ints — the
+             nullable accessors this used to need are gone with the raw query. */}}
+        <td>{{.Bots}}</td>
         <td>{{.UniqueIps}}</td>
-        <td>{{.Errors.Float64}}</td>
+        <td>{{.Errors}}</td>
         <td>{{.AvgDurationMs}}</td>
-        <td>{{if .TotalBytes.Valid}}{{humanSize (toInt64 .TotalBytes.Float64)}}{{else}}0 B{{end}}</td>
+        <td>{{humanSize .TotalBytes}}</td>
       </tr>
       {{end}}
     </tbody>

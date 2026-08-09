@@ -74,9 +74,17 @@ LOG_PATH=/var/log/caddy/access.log
 CADDY_ADMIN_URL=http://localhost:2019
 AUTH_USER=admin
 AUTH_PASS=CHANGE_ME_TO_A_STRONG_PASSWORD
-RETENTION_DAYS=90
+RETENTION_DAYS=30
+UPTIME_RETENTION_DAYS=14
+APP_LOG_RETENTION_DAYS=90
+APP_LOG_NOISE_RETENTION_DAYS=14
+ANOMALY_RETENTION_DAYS=90
+ALERT_LOG_RETENTION_DAYS=180
 LOG_API_KEY=CHANGE_ME_TO_A_RANDOM_KEY
-IGNORE_USER_AGENTS=Go-http-client
+GEOIP_DB_PATH=/var/lib/GeoIP/GeoLite2-City.mmdb
+# Monitor's own uptime probes are always skipped; this is for extra entries only.
+# Never add "Go-http-client" — it would hide every Go-written scanner.
+IGNORE_USER_AGENTS=
 ENVFILE
     chown www-data:www-data "$APP_DIR/.env"
     chmod 600 "$APP_DIR/.env"

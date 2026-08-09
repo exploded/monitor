@@ -54,7 +54,8 @@ document.getElementById('range-select').addEventListener('change', function() {
       <option value="4">4xx Client Error</option>
       <option value="5">5xx Server Error</option>
     </select>
-    <input type="date" name="from">
+    {{/* Raw requests are pruned at 30 days; earlier dates are floored server-side. */}}
+    <input type="date" name="from" min="{{.Extra.SearchMinDate}}" title="Raw request history is kept for 30 days">
     <input type="date" name="to">
     <button type="submit" class="btn btn-primary">Search</button>
     <button type="button" class="btn btn-secondary" onclick="exportResults('csv')">Export CSV</button>

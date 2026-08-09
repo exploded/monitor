@@ -29,12 +29,7 @@ func (h *Handler) ExportSearch(w http.ResponseWriter, r *http.Request) {
 		statusFilter, _ = strconv.ParseInt(statusStr, 10, 64)
 	}
 
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	if fromStr != "" {
-		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = t
-		}
-	}
+	from := clampFrom(fromStr)
 	to := time.Now().UTC()
 	if toStr != "" {
 		if t, err := time.Parse("2006-01-02", toStr); err == nil {

@@ -30,6 +30,49 @@ var rangeLabels = map[string]string{
 	"7d":  "last 7 days",
 }
 
+// RawRetentionDays mirrors the raw `requests` horizon. Search and export are
+// floored to it: raw rows older than this no longer exist, so accepting an
+// earlier ?from= would silently return a truncated result set while scanning
+// the whole table to do it. Longer history lives in daily_stats.
+const RawRetentionDays = 30
+
+// searchFloor is the earliest instant search and export will look back to.
+func searchFloor() time.Time {
+	return time.Now().UTC().AddDate(0, 0, -RawRetentionDays)
+}
+
+// DailySummaryDays is how far back the daily table reaches. It reads
+// daily_stats rather than raw rows, so it is not tied to RawRetentionDays and
+// costs one row per day — otherwise the rollup would retain history nothing
+// ever displays.
+const DailySummaryDays = 90
+
+// dailySummaryFrom is the first day the rollup-backed summary covers.
+func dailySummaryFrom() string {
+	return time.Now().UTC().AddDate(0, 0, -DailySummaryDays).Format("2006-01-02")
+}
+
+// searchMinDate is the earliest date the search picker offers. Search reads raw
+// rows, so it is bounded by the raw horizon, not the rollup's.
+func searchMinDate() string {
+	return searchFloor().Format("2006-01-02")
+}
+
+// clampFrom parses a YYYY-MM-DD ?from= value and floors it to the raw retention
+// horizon, defaulting to 24h back when absent or unparseable.
+func clampFrom(fromStr string) time.Time {
+	from := time.Now().UTC().Add(-24 * time.Hour)
+	if fromStr != "" {
+		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+			from = t.UTC()
+		}
+	}
+	if floor := searchFloor(); from.Before(floor) {
+		return floor
+	}
+	return from
+}
+
 // parseRange returns the since time and range key from a request's "range" query param.
 func parseRange(r *http.Request) (time.Time, string) {
 	rng := r.URL.Query().Get("range")
@@ -64,10 +107,9 @@ func labelStep(n int) int {
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	since, rng := parseRange(r)
-	daySince := time.Now().UTC().Add(-30 * 24 * time.Hour)
 
 	hourly, _ := h.q.HourlyRequestCounts(ctx, since)
-	daily, _ := h.q.DailySummary(ctx, daySince)
+	daily, _ := h.q.DailySummary(ctx, dailySummaryFrom())
 
 	// Pre-calculate chart data
 	type ChartBar struct {
@@ -126,6 +168,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"Range":         rng,
 			"RangeLabel":    rangeLabels[rng],
 			"LabelStep":     step,
+			"SearchMinDate": searchMinDate(),
 		},
 	})
 }
@@ -191,8 +234,7 @@ func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
 // DailySummary renders the daily summary table partial.
 func (h *Handler) DailySummary(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	since := time.Now().UTC().Add(-30 * 24 * time.Hour)
-	daily, _ := h.q.DailySummary(ctx, since)
+	daily, _ := h.q.DailySummary(ctx, dailySummaryFrom())
 
 	tmpl, ok := h.pages["history"]
 	if !ok {
@@ -264,11 +306,11 @@ func (h *Handler) BandwidthChart(w http.ResponseWriter, r *http.Request) {
 
 // LatencyPoint holds pre-computed SVG coordinates for a latency chart point.
 type LatencyPoint struct {
-	Hour       string
-	P50        float64
-	P95        float64
-	P99        float64
-	X          int
+	Hour          string
+	P50           float64
+	P95           float64
+	P99           float64
+	X             int
 	Y50, Y95, Y99 int
 }
 
@@ -285,9 +327,9 @@ func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, float64
 		sort.Float64s(durations)
 		n := len(durations)
 		points = append(points, LatencyPoint{
-			P50: durations[int(math.Floor(float64(n)*0.50))],
-			P95: durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.95)))],
-			P99: durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.99)))],
+			P50:  durations[int(math.Floor(float64(n)*0.50))],
+			P95:  durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.95)))],
+			P99:  durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.99)))],
 			Hour: curHour,
 		})
 	}
@@ -568,12 +610,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		statusFilter, _ = strconv.ParseInt(statusStr, 10, 64)
 	}
 
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	if fromStr != "" {
-		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = t
-		}
-	}
+	from := clampFrom(fromStr)
 	to := time.Now().UTC()
 	if toStr != "" {
 		if t, err := time.Parse("2006-01-02", toStr); err == nil {
@@ -605,7 +642,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data := PageData{Extra: map[string]any{
-		"Results":    results,
+		"Results":  results,
 		"Query":    fmt.Sprintf("host=%s&ip=%s&ua=%s&status=%s&from=%s&to=%s", host, ip, ua, statusStr, fromStr, toStr),
 		"NextPage": page + 1,
 		"HasMore":  int64(len(results)) == limit,

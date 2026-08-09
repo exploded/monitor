@@ -23,7 +23,7 @@ FROM uptime_targets WHERE enabled = 1;
 INSERT INTO uptime_checks (target_id, ts, status, response_time_ms, error) VALUES (?, ?, ?, ?, ?);
 
 -- name: RecentUptimeChecks :many
-SELECT id, target_id, ts, status, response_time_ms, error, created_at
+SELECT id, target_id, ts, status, response_time_ms, error
 FROM uptime_checks WHERE target_id = ? ORDER BY id DESC LIMIT ?;
 
 -- name: UptimePercentage :one
@@ -39,10 +39,43 @@ FROM uptime_checks
 WHERE target_id = ? AND ts >= ? AND error = '';
 
 -- name: UptimeChecksSince :many
-SELECT id, target_id, ts, status, response_time_ms, error, created_at
+SELECT id, target_id, ts, status, response_time_ms, error
 FROM uptime_checks
 WHERE target_id = sqlc.arg(target_id) AND ts >= sqlc.arg(since)
 ORDER BY ts;
 
--- name: DeleteUptimeChecksBefore :exec
-DELETE FROM uptime_checks WHERE ts < ?;
+-- name: RollupUptimeDaily :exec
+INSERT INTO uptime_daily (target_id, day, checks, up_count, avg_response_ms, max_response_ms)
+SELECT
+    target_id,
+    date(ts),
+    COUNT(*),
+    SUM(CASE WHEN error = '' THEN 1 ELSE 0 END),
+    COALESCE(ROUND(AVG(CASE WHEN error = '' THEN response_time_ms END), 1), 0),
+    COALESCE(MAX(CASE WHEN error = '' THEN response_time_ms END), 0)
+FROM uptime_checks
+WHERE date(ts) = CAST(sqlc.arg(day) AS TEXT)
+GROUP BY target_id, date(ts)
+ON CONFLICT(target_id, day) DO UPDATE SET
+    checks = excluded.checks, up_count = excluded.up_count,
+    avg_response_ms = excluded.avg_response_ms, max_response_ms = excluded.max_response_ms;
+
+-- name: DaysMissingFromUptimeDaily :many
+SELECT DISTINCT date(ts) AS day
+FROM uptime_checks
+WHERE date(ts) NOT IN (SELECT day FROM uptime_daily)
+ORDER BY day;
+
+-- name: UptimeDailySince :many
+SELECT target_id, day, checks, up_count, avg_response_ms, max_response_ms
+FROM uptime_daily
+WHERE target_id = sqlc.arg(target_id) AND day >= sqlc.arg(from_day)
+ORDER BY day;
+
+-- name: DeleteUptimeDailyBefore :exec
+DELETE FROM uptime_daily WHERE day < sqlc.arg(cutoff_day);
+
+-- name: DeleteUptimeChecksBeforeBatch :execresult
+DELETE FROM uptime_checks WHERE id IN (
+    SELECT u.id FROM uptime_checks u WHERE u.ts < sqlc.arg(cutoff) ORDER BY u.id LIMIT sqlc.arg(batch_size)
+);

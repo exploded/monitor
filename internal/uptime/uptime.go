@@ -9,6 +9,7 @@ import (
 
 	db "github.com/exploded/monitor/db/sqlc"
 	"github.com/exploded/monitor/internal/alerts"
+	"github.com/exploded/monitor/internal/config"
 )
 
 // Monitor periodically checks HTTP endpoints and records results.
@@ -70,7 +71,16 @@ func (m *Monitor) checkAll(ctx context.Context) {
 
 func (m *Monitor) checkTarget(ctx context.Context, t db.ListEnabledUptimeTargetsRow) {
 	start := time.Now()
-	resp, err := m.client.Get(t.Url)
+
+	var resp *http.Response
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.Url, nil)
+	if err == nil {
+		// Identify ourselves rather than sending Go's default Go-http-client/x.y.
+		// The watcher filters this exact UA out of the request log; matching on
+		// the generic Go default instead would hide every Go-written scanner.
+		req.Header.Set("User-Agent", config.MonitorUserAgent)
+		resp, err = m.client.Do(req)
+	}
 
 	status := 0
 	errStr := ""

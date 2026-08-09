@@ -38,8 +38,21 @@ func main() {
 
 	q := db.New(sqlDB)
 
-	// Prune old requests on startup
-	if err := database.Prune(context.Background(), q, cfg.RetentionDays); err != nil {
+	retention := database.Retention{
+		Requests:     cfg.RetentionDays,
+		UptimeChecks: cfg.UptimeRetentionDays,
+		AppLogError:  cfg.AppLogRetentionDays,
+		AppLogNoise:  cfg.AppLogNoiseRetentionDays,
+		Anomalies:    cfg.AnomalyRetentionDays,
+		AlertLog:     cfg.AlertLogRetentionDays,
+	}
+
+	// Roll up before pruning, always — otherwise a day can be deleted from raw
+	// before it has been aggregated. The first run backfills every day present.
+	if err := database.Rollup(context.Background(), q); err != nil {
+		slog.Error("rollup", "err", err)
+	}
+	if err := database.Prune(context.Background(), q, retention); err != nil {
 		slog.Error("prune", "err", err)
 	}
 
@@ -56,7 +69,6 @@ func main() {
 		slog.Error("load templates", "err", err)
 		os.Exit(1)
 	}
-
 
 	// Bot matcher
 	matcher := watcher.NewBotMatcher()
@@ -124,11 +136,16 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if err := database.Prune(context.Background(), q, cfg.RetentionDays); err != nil {
+				// ctx, not Background: a prune in flight should stop on SIGTERM
+				// rather than keep deleting through shutdown.
+				if err := database.Rollup(ctx, q); err != nil {
+					slog.Error("rollup", "err", err)
+				}
+				if err := database.Prune(ctx, q, retention); err != nil {
 					slog.Error("prune", "err", err)
 				}
 				// Prune auto-blocked IPs older than 48 hours
-				res, err := q.PruneAutoBlockedIPs(context.Background(), time.Now().Add(-48*time.Hour))
+				res, err := q.PruneAutoBlockedIPs(ctx, time.Now().Add(-48*time.Hour))
 				if err != nil {
 					slog.Error("prune auto-blocked IPs", "err", err)
 					continue

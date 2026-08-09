@@ -14,6 +14,7 @@ import (
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/config"
 	"github.com/exploded/monitor/internal/geoip"
 )
 
@@ -35,16 +36,16 @@ type CaddyLogEntry struct {
 // Watcher tails a Caddy access log file, parses JSON entries,
 // and writes them to SQLite.
 type Watcher struct {
-	logPath          string
-	rawDB            *sql.DB
-	q                *db.Queries
-	matcher          *BotMatcher
-	autoBlocker      *AutoBlocker
-	honeypotChecker  *HoneypotChecker
-	geo              *geoip.Resolver
-	ingestCh         chan db.InsertRequestParams
-	ignoreHosts      map[string]bool
-	ignoreUAs        []string // lowercase substrings to match against User-Agent
+	logPath         string
+	rawDB           *sql.DB
+	q               *db.Queries
+	matcher         *BotMatcher
+	autoBlocker     *AutoBlocker
+	honeypotChecker *HoneypotChecker
+	geo             *geoip.Resolver
+	ingestCh        chan db.InsertRequestParams
+	ignoreHosts     map[string]bool
+	ignoreUAs       []string // lowercase substrings to match against User-Agent
 }
 
 // New creates a Watcher.
@@ -53,9 +54,13 @@ func New(logPath string, rawDB *sql.DB, q *db.Queries, matcher *BotMatcher, auto
 	for _, h := range ignoreHosts {
 		ih[h] = true
 	}
-	lowerUAs := make([]string, len(ignoreUserAgents))
-	for i, ua := range ignoreUserAgents {
-		lowerUAs[i] = strings.ToLower(ua)
+	// Monitor's own uptime probes are always skipped, regardless of config —
+	// relying on IGNORE_USER_AGENTS for this meant a stale .env could flood the
+	// request log with our own polling (thousands of rows a day).
+	lowerUAs := make([]string, 0, len(ignoreUserAgents)+1)
+	lowerUAs = append(lowerUAs, strings.ToLower(config.MonitorUserAgent))
+	for _, ua := range ignoreUserAgents {
+		lowerUAs = append(lowerUAs, strings.ToLower(ua))
 	}
 	return &Watcher{
 		logPath:         logPath,
@@ -188,7 +193,7 @@ func (w *Watcher) processLine(line []byte) {
 	}
 
 	// GeoIP lookup
-	country, city := w.geo.Lookup(entry.Request.ClientIP)
+	country := w.geo.Lookup(entry.Request.ClientIP)
 
 	params := db.InsertRequestParams{
 		Ts:         ts,
@@ -202,7 +207,6 @@ func (w *Watcher) processLine(line []byte) {
 		DurationMs: entry.Duration * 1000,
 		IsBot:      isBotInt,
 		Country:    country,
-		City:       city,
 		Referer:    referer,
 	}
 

@@ -10,18 +10,45 @@ FROM requests
 WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
 GROUP BY hour ORDER BY hour;
 
+-- Reads the rollup, not raw rows. Previously this recomputed six aggregates
+-- (including a COUNT DISTINCT) over a 30-day partition of `requests` on every
+-- /history load and every /partials/daily poll.
 -- name: DailySummary :many
+SELECT day, total, bots, unique_ips, errors, avg_duration AS avg_duration_ms, bytes AS total_bytes
+FROM daily_stats
+WHERE day >= sqlc.arg(from_day)
+ORDER BY day DESC;
+
+-- Recomputes one day from raw. Called for today and yesterday on each rollup
+-- tick (yesterday so the final late-arriving rows are folded in), and for every
+-- uncovered day during backfill. UPSERT so re-running is idempotent.
+-- name: RollupDailyStats :exec
+INSERT INTO daily_stats (day, total, bots, unique_ips, errors, avg_duration, bytes)
 SELECT
-    date(ts) AS day,
-    COUNT(*) AS total,
-    SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END) AS bots,
-    COUNT(DISTINCT client_ip) AS unique_ips,
-    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END) AS errors,
-    ROUND(AVG(duration_ms), 1) AS avg_duration_ms,
-    SUM(size) AS total_bytes
+    date(ts),
+    COUNT(*),
+    SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END),
+    COUNT(DISTINCT client_ip),
+    SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END),
+    COALESCE(ROUND(AVG(duration_ms), 1), 0),
+    COALESCE(SUM(size), 0)
 FROM requests
-WHERE ts >= ?
-GROUP BY day ORDER BY day DESC;
+WHERE date(ts) = CAST(sqlc.arg(day) AS TEXT)
+GROUP BY date(ts)
+ON CONFLICT(day) DO UPDATE SET
+    total = excluded.total, bots = excluded.bots, unique_ips = excluded.unique_ips,
+    errors = excluded.errors, avg_duration = excluded.avg_duration, bytes = excluded.bytes;
+
+-- Days present in raw `requests` but not yet rolled up. Drives the backfill and
+-- catches any day missed while the process was down.
+-- name: DaysMissingFromDailyStats :many
+SELECT DISTINCT date(ts) AS day
+FROM requests
+WHERE date(ts) NOT IN (SELECT day FROM daily_stats)
+ORDER BY day;
+
+-- name: DeleteDailyStatsBefore :exec
+DELETE FROM daily_stats WHERE day < sqlc.arg(cutoff_day);
 
 -- name: SearchRequests :many
 SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
@@ -59,16 +86,6 @@ SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, SUM(size) AS total_bytes, COUNT(*
 FROM requests
 WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
 GROUP BY hour ORDER BY hour;
-
--- name: DailyBandwidthSummary :many
-SELECT date(ts) AS day, SUM(size) AS total_bytes, COUNT(*) AS cnt
-FROM requests WHERE ts >= ?
-GROUP BY day ORDER BY day DESC;
-
--- name: BandwidthByHostSince :many
-SELECT host, SUM(size) AS total_bytes, COUNT(*) AS cnt
-FROM requests WHERE ts >= ?
-GROUP BY host ORDER BY total_bytes DESC;
 
 -- name: IPReputationData :many
 SELECT

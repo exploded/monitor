@@ -20,7 +20,7 @@ Self-hosted server monitoring portal that tails Caddy JSON access logs, stores p
 - **Historical views** — hourly SVG bar chart, daily summary, search/filter
 - **HTTP basic auth** — protects the portal
 - **Log rotation handling** — detects inode change or truncation, reopens file
-- **Automatic pruning** — deletes requests older than configurable retention period
+- **Automatic pruning** — batched deletes on per-table retention horizons, with daily rollups preserving long-run history
 
 ## Local Development
 
@@ -147,7 +147,74 @@ All configuration via environment variables (or `.env` file):
 | `CADDY_ADMIN_URL` | `http://localhost:2019` | Caddy admin API URL |
 | `AUTH_USER` | `admin` | Basic auth username |
 | `AUTH_PASS` | — | Basic auth password |
-| `RETENTION_DAYS` | `90` | Delete requests older than this |
+| `RETENTION_DAYS` | `30` | Raw `requests` horizon |
+| `UPTIME_RETENTION_DAYS` | `14` | Raw `uptime_checks` horizon |
+| `APP_LOG_RETENTION_DAYS` | `90` | `app_logs` at ERROR |
+| `APP_LOG_NOISE_RETENTION_DAYS` | `14` | `app_logs` below ERROR |
+| `ANOMALY_RETENTION_DAYS` | `90` | `anomalies` horizon |
+| `ALERT_LOG_RETENTION_DAYS` | `180` | `alert_log` horizon |
+| `GEOIP_DB_PATH` | `/var/lib/GeoIP/GeoLite2-City.mmdb` | MaxMind GeoLite2-City database |
+| `IGNORE_HOSTS` | — | Comma-separated hosts to skip |
+| `IGNORE_USER_AGENTS` | — | Extra UA substrings to skip. Monitor's own probes are always skipped; never add `Go-http-client` |
+
+## Data Retention
+
+Raw events expire quickly because nothing in the UI reads them for long — every
+range selector caps at 7 days, and the only 30-day readers are the daily summary
+and the host list. Long-run history lives in two rollup tables instead.
+
+| Table | Raw | Kept as |
+|---|---|---|
+| `requests` | 30 days | `daily_stats`, ~13 months |
+| `uptime_checks` | 14 days | `uptime_daily`, ~13 months |
+| `app_logs` | 90d ERROR / 14d below | — |
+| `anomalies` | 90 days | — |
+| `alert_log` | 180 days | — |
+
+The rollup runs immediately before each prune, so a day is always aggregated
+before its raw rows can be deleted. The first run backfills every day present.
+`/search` and `/export/search` are floored to the raw horizon — an earlier
+`?from=` would otherwise scan the whole table to return a silently truncated
+result.
+
+Pruning deletes in batches of 5,000 with a short pause between them. The pool is
+capped at a single connection, so an unbounded `DELETE` would block every
+dashboard read and every watcher insert for its duration.
+
+### Reclaiming disk space
+
+Deletes free pages for reuse but **do not shrink the file** — after a one-off
+retention reduction the file stays its old size with the freed space on the free
+list. Reclaim it once, then leave it alone; at a fixed horizon the file
+plateaus by itself and a scheduled `VACUUM` buys nothing.
+
+```bash
+sqlite3 /var/www/monitor/monitor.db "VACUUM INTO '/var/www/monitor/monitor-compact.db';"
+sudo systemctl stop monitor
+sudo -u www-data mv /var/www/monitor/monitor-compact.db /var/www/monitor/monitor.db
+sudo systemctl start monitor
+```
+
+`VACUUM INTO` runs under a read transaction, so it does not take the exclusive
+lock a plain `VACUUM` does and does not need 2× space in the same file. Downtime
+is just the swap.
+
+### GeoIP database
+
+`GeoLite2-City.mmdb` lives at `/var/lib/GeoIP/` — outside the app directory,
+which the deploy script `chown -R`s and overwrites. It is **not** shipped by
+`scripts/deploy-monitor`; place it by hand. It is memory-mapped, so it costs no
+heap and adds no startup time, but it also means **you must not overwrite it in
+place** — download alongside and `mv` (an atomic rename), then restart:
+
+```bash
+sudo mv ~/GeoLite2-City.mmdb.new /var/lib/GeoIP/GeoLite2-City.mmdb
+sudo systemctl restart monitor
+```
+
+Only the country code is read; MaxMind publishes updates twice weekly and there
+is no automatic refresh. Without the file, monitor degrades gracefully — the
+country panel shows its empty state and everything else works.
 
 ## Project Structure
 

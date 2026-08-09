@@ -11,14 +11,18 @@ CREATE TABLE IF NOT EXISTS requests (
     duration_ms REAL NOT NULL,
     is_bot      INTEGER NOT NULL DEFAULT 0,
     country     TEXT NOT NULL DEFAULT '',
-    city        TEXT NOT NULL DEFAULT '',
     referer     TEXT NOT NULL DEFAULT ''
 );
 
+-- Deliberately only three indexes. Dropped previously:
+--   idx_requests_host    — strict prefix of idx_requests_host_ts
+--   idx_requests_status  — a handful of distinct values, and unusable for the
+--                          status/100 class filter in SearchRequests
+--   idx_requests_country — low cardinality; TopCountriesSince filters ts first
+-- Together they cost ~26 MB while serving no query. See migrations in
+-- database.go, which drop them on existing databases.
 CREATE INDEX IF NOT EXISTS idx_requests_ts ON requests(ts);
-CREATE INDEX IF NOT EXISTS idx_requests_host ON requests(host);
 CREATE INDEX IF NOT EXISTS idx_requests_client_ip ON requests(client_ip);
-CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
 CREATE INDEX IF NOT EXISTS idx_requests_host_ts ON requests(host, ts);
 
 CREATE TABLE IF NOT EXISTS bot_patterns (
@@ -151,11 +155,17 @@ CREATE TABLE IF NOT EXISTS alert_log (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_log_created ON alert_log(created_at);
 
+-- The last three match the types the anomaly detector emits. Without them,
+-- Notify found no rule and silently no-opped while the anomaly row was still
+-- written — detections existed in the UI but never alerted.
 INSERT OR IGNORE INTO alert_rules (name, type, threshold, window_minutes, cooldown_minutes) VALUES
     ('5xx Spike', '5xx_spike', 5, 5, 15),
     ('Auto-Block', 'auto_block', 1, 1, 5),
     ('Traffic Surge', 'traffic_surge', 500, 5, 30),
-    ('App Error', 'app_error', 3, 5, 15);
+    ('App Error', 'app_error', 3, 5, 15),
+    ('Rate Spike', 'rate_spike', 1, 5, 60),
+    ('New Scanner', 'new_scanner', 1, 10, 60),
+    ('5xx Anomaly', '5xx_anomaly', 1, 60, 60);
 
 -- Uptime monitoring
 CREATE TABLE IF NOT EXISTS uptime_targets (
@@ -168,16 +178,50 @@ CREATE TABLE IF NOT EXISTS uptime_targets (
     created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- No created_at: it duplicated ts on every row (~20 bytes each) and was read by
+-- nothing. This is the highest-volume table in the database.
 CREATE TABLE IF NOT EXISTS uptime_checks (
     id               INTEGER PRIMARY KEY,
     target_id        INTEGER NOT NULL REFERENCES uptime_targets(id),
     ts               DATETIME NOT NULL,
     status           INTEGER NOT NULL,
     response_time_ms REAL NOT NULL,
-    error            TEXT NOT NULL DEFAULT '',
-    created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    error            TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_uptime_checks_target_ts ON uptime_checks(target_id, ts);
+
+-- Daily rollup of uptime_checks, so raw checks can expire at 14 days while
+-- long-run availability history survives. ~10 rows/day against ~5,900 raw.
+CREATE TABLE IF NOT EXISTS uptime_daily (
+    target_id      INTEGER NOT NULL REFERENCES uptime_targets(id),
+    day            TEXT NOT NULL,
+    checks         INTEGER NOT NULL,
+    up_count       INTEGER NOT NULL,
+    avg_response_ms REAL NOT NULL,
+    max_response_ms REAL NOT NULL,
+    PRIMARY KEY (target_id, day)
+);
+
+-- Daily rollup of requests. Serves DailySummary directly (a six-aggregate 30-day
+-- scan that ran on every /history load) and keeps history past the 30-day raw
+-- horizon. unique_ips is stored per-day because COUNT(DISTINCT) does not
+-- re-aggregate: weekly/monthly distinct-IP totals cannot be derived from it.
+CREATE TABLE IF NOT EXISTS daily_stats (
+    day          TEXT PRIMARY KEY,
+    total        INTEGER NOT NULL,
+    bots         INTEGER NOT NULL,
+    unique_ips   INTEGER NOT NULL,
+    errors       INTEGER NOT NULL,
+    avg_duration REAL NOT NULL,
+    bytes        INTEGER NOT NULL
+);
+
+-- Applied-migration ledger. Without this the timestamp normalisation below ran
+-- on every boot, full-scanning the largest table each time.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 -- Anomaly detection
 CREATE TABLE IF NOT EXISTS anomalies (

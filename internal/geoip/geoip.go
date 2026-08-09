@@ -8,13 +8,12 @@ import (
 )
 
 // geoRecord matches the subset of the MaxMind GeoLite2-City database we use.
+// Only the country code: the city name was stored on every request row and read
+// by nothing, so it is no longer decoded or persisted.
 type geoRecord struct {
 	Country struct {
 		ISOCode string `maxminddb:"iso_code"`
 	} `maxminddb:"country"`
-	City struct {
-		Names map[string]string `maxminddb:"names"`
-	} `maxminddb:"city"`
 }
 
 // Resolver wraps a MaxMind .mmdb reader for IP geolocation.
@@ -37,21 +36,21 @@ func New(path string) (*Resolver, error) {
 	return &Resolver{db: db}, nil
 }
 
-// Lookup resolves an IP to country code and city name.
+// Lookup resolves an IP to an ISO country code.
 // Safe to call on a nil receiver.
-func (r *Resolver) Lookup(ipStr string) (country, city string) {
+func (r *Resolver) Lookup(ipStr string) string {
 	if r == nil || r.db == nil {
-		return "", ""
+		return ""
 	}
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
-		return "", ""
+		return ""
 	}
 	var rec geoRecord
 	if err := r.db.Lookup(ip, &rec); err != nil {
-		return "", ""
+		return ""
 	}
-	return rec.Country.ISOCode, rec.City.Names["en"]
+	return rec.Country.ISOCode
 }
 
 // Close closes the underlying database.

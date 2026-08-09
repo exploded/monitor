@@ -169,7 +169,25 @@ func (d *Detector) check5xxAnomaly(ctx context.Context) {
 	}
 }
 
+// dedupWindow suppresses repeat anomalies for the same (type, ip, host). The
+// detector runs every 2 minutes, so without this a single persistent offender
+// wrote a row every tick for as long as it stayed over threshold — 187 rows a
+// day across the table, almost all of them duplicates.
+const dedupWindow = time.Hour
+
 func (d *Detector) record(ctx context.Context, anomalyType, clientIP, host, description string, score float64) {
+	seen, err := d.q.RecentAnomalyExists(ctx, db.RecentAnomalyExistsParams{
+		Type:     anomalyType,
+		ClientIp: clientIP,
+		Host:     host,
+		Since:    time.Now().UTC().Add(-dedupWindow),
+	})
+	if err != nil {
+		slog.Error("anomaly dedup check", "err", err)
+	} else if seen {
+		return
+	}
+
 	if err := d.q.InsertAnomaly(ctx, db.InsertAnomalyParams{
 		Ts:          time.Now().UTC(),
 		Type:        anomalyType,
