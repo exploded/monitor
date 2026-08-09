@@ -47,22 +47,6 @@ func main() {
 		AlertLog:     cfg.AlertLogRetentionDays,
 	}
 
-	// Roll up before pruning, always — otherwise a day can be deleted from raw
-	// before it has been aggregated. The first run backfills every day present.
-	if err := database.Rollup(context.Background(), q); err != nil {
-		slog.Error("rollup", "err", err)
-	}
-	if err := database.Prune(context.Background(), q, retention); err != nil {
-		slog.Error("prune", "err", err)
-	}
-
-	// Prune auto-blocked IPs older than 48 hours on startup
-	if res, err := q.PruneAutoBlockedIPs(context.Background(), time.Now().Add(-48*time.Hour)); err != nil {
-		slog.Error("prune auto-blocked IPs", "err", err)
-	} else if n, _ := res.RowsAffected(); n > 0 {
-		slog.Info("pruned stale auto-blocked IPs", "count", n)
-	}
-
 	// Load templates
 	pages, err := handlers.LoadTemplates("web/templates")
 	if err != nil {
@@ -127,8 +111,38 @@ func main() {
 		slog.Warn("LOG_PATH not set, watcher disabled")
 	}
 
-	// Prune ticker — runs hourly
+	// Maintenance: once at startup, then hourly.
+	//
+	// Deliberately not run before ListenAndServe. On a large database the first
+	// pass is a full rollup backfill plus a big backlog of batched deletes, and
+	// doing that synchronously kept the process alive but not listening — the
+	// deploy's is-active check passed while Caddy served 502s for a minute. The
+	// batching exists precisely so this can run against a live server.
+	maintain := func() {
+		// Roll up before pruning, always — otherwise a day can be deleted from
+		// raw before it has been aggregated.
+		if err := database.Rollup(ctx, q); err != nil {
+			slog.Error("rollup", "err", err)
+		}
+		if err := database.Prune(ctx, q, retention); err != nil {
+			slog.Error("prune", "err", err)
+		}
+		res, err := q.PruneAutoBlockedIPs(ctx, time.Now().Add(-48*time.Hour))
+		if err != nil {
+			slog.Error("prune auto-blocked IPs", "err", err)
+			return
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			slog.Info("pruned stale auto-blocked IPs", "count", n)
+			// Reset dedup maps so returning IPs can be re-blocked
+			autoBlocker.ResetDedup()
+			honeypotChecker.ResetDedup()
+		}
+	}
+
 	go func() {
+		maintain()
+
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
 		for {
@@ -136,26 +150,9 @@ func main() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				// ctx, not Background: a prune in flight should stop on SIGTERM
-				// rather than keep deleting through shutdown.
-				if err := database.Rollup(ctx, q); err != nil {
-					slog.Error("rollup", "err", err)
-				}
-				if err := database.Prune(ctx, q, retention); err != nil {
-					slog.Error("prune", "err", err)
-				}
-				// Prune auto-blocked IPs older than 48 hours
-				res, err := q.PruneAutoBlockedIPs(ctx, time.Now().Add(-48*time.Hour))
-				if err != nil {
-					slog.Error("prune auto-blocked IPs", "err", err)
-					continue
-				}
-				if n, _ := res.RowsAffected(); n > 0 {
-					slog.Info("pruned stale auto-blocked IPs", "count", n)
-					// Reset dedup maps so returning IPs can be re-blocked
-					autoBlocker.ResetDedup()
-					honeypotChecker.ResetDedup()
-				}
+				// ctx, not Background: work in flight stops on SIGTERM rather
+				// than deleting through shutdown.
+				maintain()
 			}
 		}
 	}()
