@@ -51,12 +51,22 @@ const (
 	ColorBlue   = 0x4A90D9 // 4886745
 )
 
+// formatRecoveryTitle names the end of a condition. Prefixing the alert title
+// would read "Recovered: Service Down", which takes a beat to parse in a phone
+// notification — the moment you least want to be parsing anything.
+func formatRecoveryTitle(alertType string) string {
+	switch alertType {
+	case "downtime":
+		return "Service Recovered"
+	default:
+		return "Recovered: " + formatAlertTitle(alertType)
+	}
+}
+
 func formatAlertTitle(alertType string) string {
 	switch alertType {
 	case "5xx_spike":
 		return "5xx Error Spike"
-	case "auto_block":
-		return "IP Auto-Blocked"
 	case "traffic_surge":
 		return "Traffic Surge"
 	case "app_error":

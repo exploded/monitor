@@ -10,7 +10,6 @@ import (
 type botEntry struct {
 	pattern string // lowercased for case-insensitive match
 	label   string
-	block   bool
 }
 
 // BotMatcher checks user agent strings against a cached list of bot patterns.
@@ -30,7 +29,6 @@ func (m *BotMatcher) Load(patterns []db.BotPattern) {
 		entries[i] = botEntry{
 			pattern: strings.ToLower(p.Pattern),
 			label:   p.Label,
-			block:   p.Block == 1,
 		}
 	}
 	m.mu.Lock()

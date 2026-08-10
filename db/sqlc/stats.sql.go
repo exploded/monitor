@@ -71,6 +71,9 @@ ORDER BY day
 
 // Days present in raw `requests` but not yet rolled up. Drives the backfill and
 // catches any day missed while the process was down.
+// Deliberately unbounded: it must find every day raw still holds, including days
+// older than the retention horizon that Prune is about to delete. It is a full
+// scan, so Rollup only runs it at startup. See the comment there.
 func (q *Queries) DaysMissingFromDailyStats(ctx context.Context) ([]interface{}, error) {
 	rows, err := q.db.QueryContext(ctx, daysMissingFromDailyStats)
 	if err != nil {
@@ -367,7 +370,8 @@ SELECT
     COALESCE(ROUND(AVG(duration_ms), 1), 0),
     COALESCE(SUM(size), 0)
 FROM requests
-WHERE date(ts) = CAST(?1 AS TEXT)
+WHERE ts >= CAST(?1 AS TEXT)
+  AND ts < date(CAST(?1 AS TEXT), '+1 day')
 GROUP BY date(ts)
 ON CONFLICT(day) DO UPDATE SET
     total = excluded.total, bots = excluded.bots, unique_ips = excluded.unique_ips,
@@ -377,6 +381,11 @@ ON CONFLICT(day) DO UPDATE SET
 // Recomputes one day from raw. Called for today and yesterday on each rollup
 // tick (yesterday so the final late-arriving rows are folded in), and for every
 // uncovered day during backfill. UPSERT so re-running is idempotent.
+// Half-open range rather than date(ts) = ?. Wrapping the column in a function
+// makes the predicate non-sargable, so idx_requests_ts is unusable and every
+// hourly rollup full-scans requests. ts is normalised text, so it compares
+// lexically against a bare YYYY-MM-DD. GROUP BY stays so an empty day inserts
+// no row at all, rather than a row of zeroes.
 func (q *Queries) RollupDailyStats(ctx context.Context, day string) error {
 	_, err := q.db.ExecContext(ctx, rollupDailyStats, day)
 	return err

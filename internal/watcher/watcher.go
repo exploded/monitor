@@ -36,20 +36,18 @@ type CaddyLogEntry struct {
 // Watcher tails a Caddy access log file, parses JSON entries,
 // and writes them to SQLite.
 type Watcher struct {
-	logPath         string
-	rawDB           *sql.DB
-	q               *db.Queries
-	matcher         *BotMatcher
-	autoBlocker     *AutoBlocker
-	honeypotChecker *HoneypotChecker
-	geo             *geoip.Resolver
-	ingestCh        chan db.InsertRequestParams
-	ignoreHosts     map[string]bool
-	ignoreUAs       []string // lowercase substrings to match against User-Agent
+	logPath     string
+	rawDB       *sql.DB
+	q           *db.Queries
+	matcher     *BotMatcher
+	geo         *geoip.Resolver
+	ingestCh    chan db.InsertRequestParams
+	ignoreHosts map[string]bool
+	ignoreUAs   []string // lowercase substrings to match against User-Agent
 }
 
 // New creates a Watcher.
-func New(logPath string, rawDB *sql.DB, q *db.Queries, matcher *BotMatcher, autoBlocker *AutoBlocker, honeypotChecker *HoneypotChecker, geo *geoip.Resolver, ignoreHosts []string, ignoreUserAgents []string) *Watcher {
+func New(logPath string, rawDB *sql.DB, q *db.Queries, matcher *BotMatcher, geo *geoip.Resolver, ignoreHosts []string, ignoreUserAgents []string) *Watcher {
 	ih := make(map[string]bool, len(ignoreHosts))
 	for _, h := range ignoreHosts {
 		ih[h] = true
@@ -63,16 +61,14 @@ func New(logPath string, rawDB *sql.DB, q *db.Queries, matcher *BotMatcher, auto
 		lowerUAs = append(lowerUAs, strings.ToLower(ua))
 	}
 	return &Watcher{
-		logPath:         logPath,
-		rawDB:           rawDB,
-		q:               q,
-		matcher:         matcher,
-		autoBlocker:     autoBlocker,
-		honeypotChecker: honeypotChecker,
-		geo:             geo,
-		ingestCh:        make(chan db.InsertRequestParams, 256),
-		ignoreHosts:     ih,
-		ignoreUAs:       lowerUAs,
+		logPath:     logPath,
+		rawDB:       rawDB,
+		q:           q,
+		matcher:     matcher,
+		geo:         geo,
+		ingestCh:    make(chan db.InsertRequestParams, 256),
+		ignoreHosts: ih,
+		ignoreUAs:   lowerUAs,
 	}
 }
 
@@ -180,16 +176,6 @@ func (w *Watcher) processLine(line []byte) {
 	var isBotInt int64
 	if isBot {
 		isBotInt = 1
-	}
-
-	// Check auto-block rules against the URI
-	if w.autoBlocker != nil {
-		w.autoBlocker.Check(entry.Request.URI, entry.Request.ClientIP)
-	}
-
-	// Check honeypot paths against the URI
-	if w.honeypotChecker != nil {
-		w.honeypotChecker.Check(entry.Request.URI, entry.Request.ClientIP)
 	}
 
 	// GeoIP lookup

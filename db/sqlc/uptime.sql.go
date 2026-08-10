@@ -95,12 +95,30 @@ func (q *Queries) DeleteUptimeChecksBeforeBatch(ctx context.Context, arg DeleteU
 	return q.db.ExecContext(ctx, deleteUptimeChecksBeforeBatch, arg.Cutoff, arg.BatchSize)
 }
 
+const deleteUptimeChecksForTarget = `-- name: DeleteUptimeChecksForTarget :exec
+DELETE FROM uptime_checks WHERE target_id = ?
+`
+
+func (q *Queries) DeleteUptimeChecksForTarget(ctx context.Context, targetID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUptimeChecksForTarget, targetID)
+	return err
+}
+
 const deleteUptimeDailyBefore = `-- name: DeleteUptimeDailyBefore :exec
 DELETE FROM uptime_daily WHERE day < ?1
 `
 
 func (q *Queries) DeleteUptimeDailyBefore(ctx context.Context, cutoffDay string) error {
 	_, err := q.db.ExecContext(ctx, deleteUptimeDailyBefore, cutoffDay)
+	return err
+}
+
+const deleteUptimeDailyForTarget = `-- name: DeleteUptimeDailyForTarget :exec
+DELETE FROM uptime_daily WHERE target_id = ?
+`
+
+func (q *Queries) DeleteUptimeDailyForTarget(ctx context.Context, targetID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUptimeDailyForTarget, targetID)
 	return err
 }
 
@@ -284,13 +302,15 @@ SELECT
     COALESCE(ROUND(AVG(CASE WHEN error = '' THEN response_time_ms END), 1), 0),
     COALESCE(MAX(CASE WHEN error = '' THEN response_time_ms END), 0)
 FROM uptime_checks
-WHERE date(ts) = CAST(?1 AS TEXT)
+WHERE ts >= CAST(?1 AS TEXT)
+  AND ts < date(CAST(?1 AS TEXT), '+1 day')
 GROUP BY target_id, date(ts)
 ON CONFLICT(target_id, day) DO UPDATE SET
     checks = excluded.checks, up_count = excluded.up_count,
     avg_response_ms = excluded.avg_response_ms, max_response_ms = excluded.max_response_ms
 `
 
+// Half-open range, for the same reason as RollupDailyStats.
 func (q *Queries) RollupUptimeDaily(ctx context.Context, day string) error {
 	_, err := q.db.ExecContext(ctx, rollupUptimeDaily, day)
 	return err

@@ -61,7 +61,9 @@ SELECT
     COALESCE(ROUND(AVG(CASE WHEN error = '' THEN response_time_ms END), 1), 0),
     COALESCE(MAX(CASE WHEN error = '' THEN response_time_ms END), 0)
 FROM uptime_checks
-WHERE date(ts) = CAST(sqlc.arg(day) AS TEXT)
+-- Half-open range, for the same reason as RollupDailyStats.
+WHERE ts >= CAST(sqlc.arg(day) AS TEXT)
+  AND ts < date(CAST(sqlc.arg(day) AS TEXT), '+1 day')
 GROUP BY target_id, date(ts)
 ON CONFLICT(target_id, day) DO UPDATE SET
     checks = excluded.checks, up_count = excluded.up_count,
@@ -81,6 +83,12 @@ ORDER BY day;
 
 -- name: DeleteUptimeDailyBefore :exec
 DELETE FROM uptime_daily WHERE day < sqlc.arg(cutoff_day);
+
+-- name: DeleteUptimeChecksForTarget :exec
+DELETE FROM uptime_checks WHERE target_id = ?;
+
+-- name: DeleteUptimeDailyForTarget :exec
+DELETE FROM uptime_daily WHERE target_id = ?;
 
 -- name: DeleteUptimeChecksBeforeBatch :execresult
 DELETE FROM uptime_checks WHERE id IN (

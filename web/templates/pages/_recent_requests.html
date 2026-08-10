@@ -12,7 +12,6 @@
       <th>Status</th>
       <th>User Agent</th>
       <th>Referrer</th>
-      <th></th>
     </tr>
   </thead>
   <tbody>
@@ -26,9 +25,6 @@
       <td title="{{statusText .Status}}">{{.Status}}</td>
       <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
       <td class="ua-cell" title="{{.Referer}}">{{if .Referer}}{{refererLabel .Referer}}{{else}}<span class="muted">-</span>{{end}}</td>
-      <td>
-        <button class="btn-sm btn-block" hx-post="/ips" hx-vals='{"ip":"{{.ClientIp}}","reason":"blocked from live log"}' hx-swap="none" hx-disabled-elt="this" hx-on::after-request="if(event.detail.successful){this.textContent='Blocked';this.disabled=true;this.classList.replace('btn-block','btn-blocked')}">Block</button>
-      </td>
     </tr>
     {{end}}
   </tbody>

@@ -10,17 +10,16 @@ import (
 )
 
 const createBotPattern = `-- name: CreateBotPattern :exec
-INSERT INTO bot_patterns (pattern, label, block) VALUES (?, ?, ?)
+INSERT INTO bot_patterns (pattern, label) VALUES (?, ?)
 `
 
 type CreateBotPatternParams struct {
 	Pattern string `json:"pattern"`
 	Label   string `json:"label"`
-	Block   int64  `json:"block"`
 }
 
 func (q *Queries) CreateBotPattern(ctx context.Context, arg CreateBotPatternParams) error {
-	_, err := q.db.ExecContext(ctx, createBotPattern, arg.Pattern, arg.Label, arg.Block)
+	_, err := q.db.ExecContext(ctx, createBotPattern, arg.Pattern, arg.Label)
 	return err
 }
 
@@ -33,25 +32,8 @@ func (q *Queries) DeleteBotPattern(ctx context.Context, id int64) error {
 	return err
 }
 
-const getBotPattern = `-- name: GetBotPattern :one
-SELECT id, pattern, label, block, created_at FROM bot_patterns WHERE id = ?
-`
-
-func (q *Queries) GetBotPattern(ctx context.Context, id int64) (BotPattern, error) {
-	row := q.db.QueryRowContext(ctx, getBotPattern, id)
-	var i BotPattern
-	err := row.Scan(
-		&i.ID,
-		&i.Pattern,
-		&i.Label,
-		&i.Block,
-		&i.CreatedAt,
-	)
-	return i, err
-}
-
 const listBotPatterns = `-- name: ListBotPatterns :many
-SELECT id, pattern, label, block, created_at FROM bot_patterns ORDER BY label
+SELECT id, pattern, label, created_at FROM bot_patterns ORDER BY label
 `
 
 func (q *Queries) ListBotPatterns(ctx context.Context) ([]BotPattern, error) {
@@ -67,7 +49,6 @@ func (q *Queries) ListBotPatterns(ctx context.Context) ([]BotPattern, error) {
 			&i.ID,
 			&i.Pattern,
 			&i.Label,
-			&i.Block,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -81,13 +62,4 @@ func (q *Queries) ListBotPatterns(ctx context.Context) ([]BotPattern, error) {
 		return nil, err
 	}
 	return items, nil
-}
-
-const toggleBotBlock = `-- name: ToggleBotBlock :exec
-UPDATE bot_patterns SET block = CASE WHEN block = 0 THEN 1 ELSE 0 END WHERE id = ?
-`
-
-func (q *Queries) ToggleBotBlock(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, toggleBotBlock, id)
-	return err
 }

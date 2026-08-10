@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+	"unicode"
 
 	db "github.com/exploded/monitor/db/sqlc"
 )
@@ -22,6 +24,40 @@ func schemaPath(t *testing.T) string {
 		t.Fatalf("schema not found at %s: %v", p, err)
 	}
 	return p
+}
+
+// TestQueryFilesAreASCII guards a trap that costs more time than it should.
+// sqlc rewrites sqlc.arg() into positional parameters using byte offsets, so a
+// multi-byte rune anywhere in a query file — an em-dash in a comment is the easy
+// mistake — shifts every later edit and silently corrupts a different query. The
+// failure surfaces as a parse error on innocent SQL several queries away.
+func TestQueryFilesAreASCII(t *testing.T) {
+	dir, err := filepath.Abs(filepath.Join("..", "..", "db", "queries"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".sql") {
+			continue
+		}
+		content, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, line := range strings.Split(string(content), "\n") {
+			for _, r := range line {
+				if r > unicode.MaxASCII {
+					t.Errorf("%s:%d contains non-ASCII %q; keep query files ASCII-only", e.Name(), i+1, r)
+					break
+				}
+			}
+		}
+	}
 }
 
 func openTestDB(t *testing.T) (*sql.DB, *db.Queries) {
@@ -98,6 +134,7 @@ func TestDroppedColumnsAreGone(t *testing.T) {
 	for _, tc := range []struct{ table, column string }{
 		{"requests", "city"},
 		{"uptime_checks", "created_at"},
+		{"bot_patterns", "block"},
 	} {
 		var n int
 		err := d.QueryRow(
@@ -121,6 +158,134 @@ func TestDroppedColumnsAreGone(t *testing.T) {
 		if n != 0 {
 			t.Errorf("index %s still present", idx)
 		}
+	}
+}
+
+// TestBlockingArtifactsAreMigratedAway covers the upgrade path that production
+// actually takes. On a fresh database the blocking tables are simply never
+// created, so only a database that already holds them — with rows, and with an
+// alert_log row pointing at the auto_block rule via a NOT NULL foreign key —
+// proves the migrations both fire and fire in a workable order.
+func TestBlockingArtifactsAreMigratedAway(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`
+		CREATE TABLE blocked_ips (
+		    id INTEGER PRIMARY KEY, ip TEXT NOT NULL UNIQUE,
+		    reason TEXT NOT NULL DEFAULT '', created_at DATETIME);
+		CREATE TABLE autoblock_rules (
+		    id INTEGER PRIMARY KEY, pattern TEXT NOT NULL UNIQUE,
+		    description TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+		    hit_count INTEGER NOT NULL DEFAULT 0, last_hit_at DATETIME, created_at DATETIME);
+		CREATE TABLE honeypots (
+		    id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE,
+		    description TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 1,
+		    hit_count INTEGER NOT NULL DEFAULT 0, last_hit_at DATETIME, created_at DATETIME);
+		CREATE TABLE bot_patterns (
+		    id INTEGER PRIMARY KEY, pattern TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+		    block INTEGER NOT NULL DEFAULT 0, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE alert_rules (
+		    id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
+		    enabled INTEGER NOT NULL DEFAULT 1, threshold INTEGER NOT NULL DEFAULT 0,
+		    window_minutes INTEGER NOT NULL DEFAULT 5, cooldown_minutes INTEGER NOT NULL DEFAULT 15,
+		    last_fired_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE alert_log (
+		    id INTEGER PRIMARY KEY, rule_id INTEGER NOT NULL REFERENCES alert_rules(id),
+		    type TEXT NOT NULL, message TEXT NOT NULL, details TEXT NOT NULL DEFAULT '{}',
+		    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+
+		INSERT INTO blocked_ips (ip) VALUES ('203.0.113.9');
+		INSERT INTO autoblock_rules (pattern) VALUES ('/wp-login');
+		INSERT INTO honeypots (path) VALUES ('/admin/login');
+		INSERT INTO bot_patterns (pattern, label, block) VALUES ('AhrefsBot', 'Ahrefs', 1);
+		INSERT INTO alert_rules (id, name, type, threshold, window_minutes, cooldown_minutes)
+		    VALUES (1, 'Auto-Block', 'auto_block', 1, 1, 5), (2, 'App Error', 'app_error', 3, 5, 15);
+		INSERT INTO alert_log (rule_id, type, message) VALUES (1, 'auto_block', 'blocked 203.0.113.9');
+	`); err != nil {
+		t.Fatalf("build legacy database: %v", err)
+	}
+	legacy.Close()
+
+	d, err := Open(path, schemaPath(t))
+	if err != nil {
+		t.Fatalf("Open on legacy database: %v", err)
+	}
+	defer d.Close()
+
+	for _, table := range []string{"blocked_ips", "autoblock_rules", "honeypots"} {
+		var n int
+		if err := d.QueryRow(
+			`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table,
+		).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("table %s survived the migration", table)
+		}
+	}
+
+	var blockCols int
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('bot_patterns') WHERE name = 'block'`,
+	).Scan(&blockCols); err != nil {
+		t.Fatal(err)
+	}
+	if blockCols != 0 {
+		t.Error("bot_patterns.block survived the migration")
+	}
+
+	// The seeded pattern must survive: detection is the reason the table stays.
+	var patterns int
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM bot_patterns WHERE pattern = 'AhrefsBot'`,
+	).Scan(&patterns); err != nil {
+		t.Fatal(err)
+	}
+	if patterns != 1 {
+		t.Errorf("bot pattern lost during column drop: got %d rows, want 1", patterns)
+	}
+
+	var autoBlockRules, autoBlockLogs int
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM alert_rules WHERE type = 'auto_block'`,
+	).Scan(&autoBlockRules); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM alert_log WHERE type = 'auto_block'`,
+	).Scan(&autoBlockLogs); err != nil {
+		t.Fatal(err)
+	}
+	if autoBlockRules != 0 || autoBlockLogs != 0 {
+		t.Errorf("auto_block artifacts remain: %d rules, %d log rows", autoBlockRules, autoBlockLogs)
+	}
+
+	// An existing App Error rule keeps its identity but adopts the per-app
+	// thresholds; the schema seed alone would not touch an already-present row.
+	var threshold, cooldown int
+	if err := d.QueryRow(
+		`SELECT threshold, cooldown_minutes FROM alert_rules WHERE type = 'app_error'`,
+	).Scan(&threshold, &cooldown); err != nil {
+		t.Fatal(err)
+	}
+	if threshold != 1 || cooldown != 30 {
+		t.Errorf("app_error rule not migrated: threshold=%d cooldown=%d, want 1/30", threshold, cooldown)
+	}
+
+	// The downtime rule ships in the schema seed rather than a migration, so a
+	// pre-existing database has to pick it up on boot or uptime alerts stay dead.
+	var downtime int
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM alert_rules WHERE type = 'downtime'`,
+	).Scan(&downtime); err != nil {
+		t.Fatal(err)
+	}
+	if downtime != 1 {
+		t.Errorf("downtime rule missing after upgrade: got %d rows, want 1", downtime)
 	}
 }
 
@@ -249,7 +414,7 @@ func TestRollupMatchesRaw(t *testing.T) {
 	insertRequest(t, q, today, 404, "1.1.1.1")
 	insertRequest(t, q, today, 500, "2.2.2.2")
 
-	if err := Rollup(ctx, q); err != nil {
+	if err := Rollup(ctx, q, true); err != nil {
 		t.Fatalf("Rollup: %v", err)
 	}
 
@@ -292,7 +457,7 @@ func TestRollupIsIdempotent(t *testing.T) {
 	insertRequest(t, q, today, 200, "1.1.1.1")
 
 	for i := 0; i < 3; i++ {
-		if err := Rollup(ctx, q); err != nil {
+		if err := Rollup(ctx, q, true); err != nil {
 			t.Fatalf("Rollup %d: %v", i, err)
 		}
 	}
@@ -318,7 +483,7 @@ func TestRollupSurvivesPrune(t *testing.T) {
 	insertRequest(t, q, old, 200, "1.1.1.1")
 	insertRequest(t, q, old, 200, "2.2.2.2")
 
-	if err := Rollup(ctx, q); err != nil {
+	if err := Rollup(ctx, q, true); err != nil {
 		t.Fatalf("Rollup: %v", err)
 	}
 	r := Retention{Requests: 30, UptimeChecks: 14, AppLogError: 90, AppLogNoise: 14, Anomalies: 90, AlertLog: 180}

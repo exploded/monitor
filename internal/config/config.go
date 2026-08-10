@@ -11,7 +11,7 @@ import (
 // uptime probes). The watcher always skips requests carrying it, regardless of
 // IGNORE_USER_AGENTS, so it must stay distinctive: the previous approach of
 // filtering Go's default Go-http-client/x.y silently excluded every Go-written
-// scanner from the request log, bot matching, auto-blocking and the honeypots.
+// scanner from the request log and from bot matching.
 // Sibling apps that quieten these probes in their own access logs match on the
 // "mchugh-monitor/" prefix.
 const MonitorUserAgent = "mchugh-monitor/1.0 (+https://monitor.mchugh.au)"
@@ -21,7 +21,6 @@ type Config struct {
 	Prod                     bool
 	DBPath                   string
 	LogPath                  string
-	CaddyAdminURL            string
 	AuthUser                 string
 	AuthPass                 string
 	RetentionDays            int // raw `requests` rows
@@ -51,7 +50,6 @@ func Load() Config {
 		Prod:                     prod,
 		DBPath:                   envOr("DB_PATH", "monitor.db"),
 		LogPath:                  os.Getenv("LOG_PATH"),
-		CaddyAdminURL:            envOr("CADDY_ADMIN_URL", "http://localhost:2019"),
 		AuthUser:                 envOr("AUTH_USER", "admin"),
 		AuthPass:                 os.Getenv("AUTH_PASS"),
 		RetentionDays:            envDays("RETENTION_DAYS", 30),

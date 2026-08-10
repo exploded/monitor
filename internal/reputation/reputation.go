@@ -22,11 +22,16 @@ type IPData struct {
 	BotCount  int64
 	FirstSeen time.Time
 	LastSeen  time.Time
-	IsBlocked bool
 }
 
 // Compute calculates a threat score (0-100) for an IP.
-// Formula: (4xx_ratio * 30) + (bot_pct * 20) + (blocked * 25) + (velocity * 25)
+// Formula: (4xx_ratio * 40) + (bot_pct * 25) + (velocity * 35)
+//
+// The weights were rebalanced when the blocklist was retired (blocking moved to
+// Cloudflare). The old formula spent 25 points on "is this IP on our blocklist",
+// which no longer exists; redistributing them across the three surviving signals
+// keeps the 26-point "worth surfacing" cutoff meaningful. A well-behaved crawler
+// (bot_pct alone) still scores 25 and stays off the list.
 func Compute(d IPData) Score {
 	if d.Total == 0 {
 		return Score{IP: d.ClientIP}
@@ -35,11 +40,6 @@ func Compute(d IPData) Score {
 	ratio4xx := float64(d.Count4xx) / float64(d.Total)
 	botPct := float64(d.BotCount) / float64(d.Total)
 
-	blockedScore := 0.0
-	if d.IsBlocked {
-		blockedScore = 1.0
-	}
-
 	// Velocity: requests per minute, normalized to 0-1 (cap at 10 req/min)
 	elapsed := d.LastSeen.Sub(d.FirstSeen).Minutes()
 	if elapsed < 1 {
@@ -47,7 +47,7 @@ func Compute(d IPData) Score {
 	}
 	velocity := math.Min(1.0, (float64(d.Total)/elapsed)/10.0)
 
-	raw := ratio4xx*30 + botPct*20 + blockedScore*25 + velocity*25
+	raw := ratio4xx*40 + botPct*25 + velocity*35
 	value := int(math.Min(100, math.Max(0, raw)))
 
 	return Score{

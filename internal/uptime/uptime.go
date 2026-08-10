@@ -2,6 +2,7 @@ package uptime
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -12,6 +13,18 @@ import (
 	"github.com/exploded/monitor/internal/config"
 )
 
+// failuresBeforeAlert is how many consecutive failed probes constitute an
+// outage. One failed probe is a blip — a dropped packet, a restart mid-deploy —
+// and alerting on it trains you to ignore the alerts.
+const failuresBeforeAlert = 2
+
+// targetState tracks a target across probes so the monitor can tell a blip from
+// an outage, and an ongoing outage from a new one.
+type targetState struct {
+	consecFails int
+	alerted     bool
+}
+
 // Monitor periodically checks HTTP endpoints and records results.
 type Monitor struct {
 	q           *db.Queries
@@ -19,6 +32,7 @@ type Monitor struct {
 	client      *http.Client
 	mu          sync.Mutex
 	lastCheck   map[int64]time.Time
+	state       map[int64]*targetState
 }
 
 // New creates an uptime Monitor.
@@ -28,6 +42,7 @@ func New(q *db.Queries, alertEngine *alerts.Engine) *Monitor {
 		alertEngine: alertEngine,
 		client:      &http.Client{Timeout: 15 * time.Second},
 		lastCheck:   make(map[int64]time.Time),
+		state:       make(map[int64]*targetState),
 	}
 }
 
@@ -52,6 +67,12 @@ func (m *Monitor) checkAll(ctx context.Context) {
 		slog.Error("uptime list targets", "err", err)
 		return
 	}
+
+	live := make(map[int64]bool, len(targets))
+	for _, t := range targets {
+		live[t.ID] = true
+	}
+	m.pruneState(live)
 
 	now := time.Now()
 	for _, t := range targets {
@@ -104,17 +125,74 @@ func (m *Monitor) checkTarget(ctx context.Context, t db.ListEnabledUptimeTargets
 		slog.Error("uptime insert check", "err", insertErr)
 	}
 
-	// Alert on downtime
-	if (err != nil || int64(status) != t.ExpectedStatus) && m.alertEngine != nil {
-		msg := t.Name + " is DOWN"
-		if err != nil {
-			msg += ": " + errStr
-		} else {
-			msg += ": got " + http.StatusText(status)
+	failed := err != nil || int64(status) != t.ExpectedStatus
+	m.recordOutcome(t, failed, status, errStr)
+}
+
+// recordOutcome advances a target's failure streak and emits the two events
+// worth a notification: an outage starting, and an outage ending.
+func (m *Monitor) recordOutcome(t db.ListEnabledUptimeTargetsRow, failed bool, status int, errStr string) {
+	m.mu.Lock()
+	st, ok := m.state[t.ID]
+	if !ok {
+		st = &targetState{}
+		m.state[t.ID] = st
+	}
+
+	var notify *alerts.Event
+	switch {
+	case failed:
+		st.consecFails++
+		if st.consecFails >= failuresBeforeAlert && !st.alerted {
+			st.alerted = true
+			msg := t.Name + " is DOWN"
+			if errStr != "" {
+				msg += ": " + errStr
+			} else {
+				msg += fmt.Sprintf(": got %d %s, want %d", status, http.StatusText(status), t.ExpectedStatus)
+			}
+			notify = &alerts.Event{
+				Type:    "downtime",
+				Key:     fmt.Sprintf("downtime:%d", t.ID),
+				Message: msg,
+				Details: fmt.Sprintf(`{"target":%q,"url":%q,"consecutive_failures":%d}`, t.Name, t.Url, st.consecFails),
+			}
 		}
-		m.alertEngine.Notify(alerts.Event{
-			Type:    "downtime",
-			Message: msg,
-		})
+	case st.alerted:
+		notify = &alerts.Event{
+			Type:      "downtime",
+			Key:       fmt.Sprintf("downtime:%d", t.ID),
+			Message:   t.Name + " is UP again",
+			Details:   fmt.Sprintf(`{"target":%q,"url":%q}`, t.Name, t.Url),
+			Recovered: true,
+		}
+		st.consecFails = 0
+		st.alerted = false
+	default:
+		st.consecFails = 0
+	}
+	m.mu.Unlock()
+
+	if notify != nil && m.alertEngine != nil {
+		m.alertEngine.Notify(*notify)
+	}
+}
+
+// pruneState forgets targets that are no longer enabled. Without it the maps
+// grow for the life of the process, and a target that is disabled while down
+// would resume with a stale outage flag — suppressing the alert for the next
+// real outage because the engine still thinks it already told you.
+func (m *Monitor) pruneState(live map[int64]bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id := range m.state {
+		if !live[id] {
+			delete(m.state, id)
+		}
+	}
+	for id := range m.lastCheck {
+		if !live[id] {
+			delete(m.lastCheck, id)
+		}
 	}
 }

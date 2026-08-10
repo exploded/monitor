@@ -1,11 +1,13 @@
 # Monitor
 
-Self-hosted server monitoring portal that tails Caddy JSON access logs, stores parsed entries in SQLite, and presents a live HTMX dashboard with traffic stats, bot detection, and IP/UA blocking.
+Self-hosted server monitoring portal that tails Caddy JSON access logs, stores parsed entries in SQLite, and presents an HTMX dashboard with traffic stats, bot detection, uptime checks and Discord alerting.
+
+Blocking is handled by Cloudflare, not by this app. Monitor used to push IP and user-agent blocks to Caddy's admin API; that has been removed, along with the manual blocklist, auto-block rules and honeypots. Bot detection remains, for labelling and stats.
 
 ## Tech Stack
 
 - Go (net/http, html/template)
-- HTMX for dynamic UI (polling + SSE)
+- HTMX for dynamic UI (polling)
 - SQLite via modernc.org/sqlite (pure Go, no CGO)
 - SQLC for type-safe query generation
 - Caddy as reverse proxy with JSON structured logs
@@ -13,11 +15,12 @@ Self-hosted server monitoring portal that tails Caddy JSON access logs, stores p
 ## Features
 
 - **Real-time log ingestion** — tails Caddy JSON access logs, batch-inserts to SQLite
-- **Live dashboard** — auto-refreshing traffic overview (30s polling), SSE live log tail
+- **Dashboard** — auto-refreshing traffic overview, per-host sparklines, IP threat scores
 - **Bot detection** — configurable user agent pattern matching, seeded with common bots
-- **IP blocklist** — manual or click-to-block from live log / top IPs table
-- **Caddy integration** — pushes blocked IPs and UAs to Caddy admin API at runtime
-- **Historical views** — hourly SVG bar chart, daily summary, search/filter
+- **Uptime checks** — HTTP probes per target, with alerts on outage and on recovery
+- **App log ingestion** — sibling apps ship WARN+ here via `pkg/logship`
+- **Discord alerts** — 5xx spikes, traffic surges, per-app errors, downtime, anomalies
+- **Historical views** — hourly SVG bar chart, daily summary, search/filter, CSV export
 - **HTTP basic auth** — protects the portal
 - **Log rotation handling** — detects inode change or truncation, reopens file
 - **Automatic pruning** — batched deletes on per-table retention horizons, with daily rollups preserving long-run history
@@ -144,9 +147,10 @@ All configuration via environment variables (or `.env` file):
 | `PORT` | `8989` | HTTP listen port |
 | `DB_PATH` | `monitor.db` | SQLite database path |
 | `LOG_PATH` | — | Path to Caddy JSON access log (required) |
-| `CADDY_ADMIN_URL` | `http://localhost:2019` | Caddy admin API URL |
 | `AUTH_USER` | `admin` | Basic auth username |
 | `AUTH_PASS` | — | Basic auth password |
+| `LOG_API_KEY` | — | Key sibling apps send as `X-API-Key` to `POST /api/logs`. Unset means the endpoint returns 503 |
+| `DISCORD_WEBHOOK_URL` | — | **The only alert transport.** Unset means no alert is delivered anywhere, while the alert log and "last fired" column still populate — so the UI looks healthy. Set this |
 | `RETENTION_DAYS` | `30` | Raw `requests` horizon |
 | `UPTIME_RETENTION_DAYS` | `14` | Raw `uptime_checks` horizon |
 | `APP_LOG_RETENTION_DAYS` | `90` | `app_logs` at ERROR |
@@ -156,6 +160,33 @@ All configuration via environment variables (or `.env` file):
 | `GEOIP_DB_PATH` | `/var/lib/GeoIP/GeoLite2-City.mmdb` | MaxMind GeoLite2-City database |
 | `IGNORE_HOSTS` | — | Comma-separated hosts to skip |
 | `IGNORE_USER_AGENTS` | — | Extra UA substrings to skip. Monitor's own probes are always skipped; never add `Go-http-client` |
+
+## Alerting
+
+Alerts go to a Discord webhook, and nowhere else. **Until `DISCORD_WEBHOOK_URL` is set,
+nothing is delivered** — every alert still writes an `alert_log` row and updates the
+rule's "last fired" timestamp, so `/alerts/dashboard` looks like a working system while
+no notification has ever left the box. The engine logs a WARN on each such fire.
+
+To set it up: Discord → Server Settings → Integrations → Webhooks → New Webhook → copy
+the URL, then add `DISCORD_WEBHOOK_URL=...` to `/var/www/monitor/.env` and restart.
+
+What fires:
+
+| Alert | Trigger | Default |
+|-------|---------|---------|
+| `app_error` | Any ERROR shipped by an app, **per app** | 1 error, 30 min cooldown per app |
+| `downtime` | An uptime target failing 2 consecutive probes | 15 min cooldown per target |
+| `5xx_spike` | 5xx responses in the Caddy log over a window | 5 in 5 min |
+| `traffic_surge` | Total requests over a window | 500 in 5 min |
+| `rate_spike`, `new_scanner`, `5xx_anomaly` | Anomaly detector | 60 min cooldown |
+
+Every outage also produces a green recovery notification when the target comes back.
+Cooldowns are per subject, not per rule, so two services failing together produce two
+alerts rather than one — and a noisy app cannot mask a quiet one's first error.
+
+Sibling apps ship their logs here with `pkg/logship`, gated on `MONITOR_URL` and
+`MONITOR_API_KEY`; they send WARN and above, and only ERROR raises an alert.
 
 ## Data Retention
 
@@ -222,21 +253,26 @@ country panel shows its empty state and everything else works.
 cmd/server/main.go           — entry point, routes, graceful shutdown
 internal/
   config/config.go            — .env loading
-  database/database.go        — SQLite WAL open, schema, pruning
+  database/
+    database.go               — SQLite WAL open, schema, migrations, pruning
+    rollup.go                 — daily aggregate refresh and backfill
   watcher/
     watcher.go                — Caddy log tail, parse, batch ingest
     matcher.go                — bot pattern matching
   handlers/
     handler.go                — Handler struct, render, PageData
     templates.go              — clone-per-page template loading
-    middleware.go              — basic auth, security headers, logging
-    hub.go                    — SSE broadcast hub
+    middleware.go             — basic auth, security headers, logging
     dashboard.go              — dashboard + traffic overview
-    logs.go                   — SSE live log stream
     bots.go                   — bot pattern CRUD
-    ips.go                    — IP blocklist CRUD
+    uptime.go                 — uptime target CRUD and detail
+    alerts.go                 — alert rule CRUD
+    applogs.go                — POST /api/logs ingest, app error panel
     history.go                — charts, daily summary, search
-  caddy/caddy.go              — Caddy admin API client
+  alerts/                     — alert engine + Discord transport
+  uptime/uptime.go            — HTTP probes, failure debounce, recovery
+  anomaly/detector.go         — rate spikes, new scanners, 5xx anomalies
+  reputation/reputation.go    — per-IP threat score
 db/
   schema.sql                  — tables, indexes, seed data
   queries/                    — SQLC query files

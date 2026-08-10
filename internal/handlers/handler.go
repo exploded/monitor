@@ -13,27 +13,23 @@ import (
 
 // Handler holds shared dependencies for all HTTP handlers.
 type Handler struct {
-	q               *db.Queries
-	rawDB           *sql.DB
-	pages           PageTemplates
-	matcher         *watcher.BotMatcher
-	autoBlocker     *watcher.AutoBlocker
-	honeypotChecker *watcher.HoneypotChecker
-	alertEngine     *alerts.Engine
-	cfg             *config.Config
+	q           *db.Queries
+	rawDB       *sql.DB
+	pages       PageTemplates
+	matcher     *watcher.BotMatcher
+	alertEngine *alerts.Engine
+	cfg         *config.Config
 }
 
 // New creates a Handler with all dependencies.
-func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.BotMatcher, autoBlocker *watcher.AutoBlocker, honeypotChecker *watcher.HoneypotChecker, alertEngine *alerts.Engine, cfg *config.Config) *Handler {
+func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.BotMatcher, alertEngine *alerts.Engine, cfg *config.Config) *Handler {
 	return &Handler{
-		q:               q,
-		rawDB:           rawDB,
-		pages:           pages,
-		matcher:         matcher,
-		autoBlocker:     autoBlocker,
-		honeypotChecker: honeypotChecker,
-		alertEngine:     alertEngine,
-		cfg:             cfg,
+		q:           q,
+		rawDB:       rawDB,
+		pages:       pages,
+		matcher:     matcher,
+		alertEngine: alertEngine,
+		cfg:         cfg,
 	}
 }
 

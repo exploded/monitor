@@ -2,9 +2,12 @@
 <h1>Dashboard</h1>
 
 <div class="dashboard-grid">
-  {{/* Traffic Overview — polls every 30s */}}
+  {{/* Traffic Overview — polls every 60s. This panel runs ~10 aggregates over a
+       24h window per refresh, on a single-connection SQLite pool, once per open
+       tab. The numbers it shows are 24h totals; nothing meaningful changes
+       inside a minute, so the extra cadence bought nothing. */}}
   <section class="panel panel-wide" id="traffic-overview"
-    hx-get="/partials/traffic" hx-trigger="every 30s" hx-swap="innerHTML">
+    hx-get="/partials/traffic" hx-trigger="every 60s" hx-swap="innerHTML">
     {{template "_traffic_overview" .}}
   </section>
 

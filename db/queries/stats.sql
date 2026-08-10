@@ -33,7 +33,13 @@ SELECT
     COALESCE(ROUND(AVG(duration_ms), 1), 0),
     COALESCE(SUM(size), 0)
 FROM requests
-WHERE date(ts) = CAST(sqlc.arg(day) AS TEXT)
+-- Half-open range rather than date(ts) = ?. Wrapping the column in a function
+-- makes the predicate non-sargable, so idx_requests_ts is unusable and every
+-- hourly rollup full-scans requests. ts is normalised text, so it compares
+-- lexically against a bare YYYY-MM-DD. GROUP BY stays so an empty day inserts
+-- no row at all, rather than a row of zeroes.
+WHERE ts >= CAST(sqlc.arg(day) AS TEXT)
+  AND ts < date(CAST(sqlc.arg(day) AS TEXT), '+1 day')
 GROUP BY date(ts)
 ON CONFLICT(day) DO UPDATE SET
     total = excluded.total, bots = excluded.bots, unique_ips = excluded.unique_ips,
@@ -41,6 +47,9 @@ ON CONFLICT(day) DO UPDATE SET
 
 -- Days present in raw `requests` but not yet rolled up. Drives the backfill and
 -- catches any day missed while the process was down.
+-- Deliberately unbounded: it must find every day raw still holds, including days
+-- older than the retention horizon that Prune is about to delete. It is a full
+-- scan, so Rollup only runs it at startup. See the comment there.
 -- name: DaysMissingFromDailyStats :many
 SELECT DISTINCT date(ts) AS day
 FROM requests

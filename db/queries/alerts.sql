@@ -32,12 +32,15 @@ SELECT COUNT(*) FROM requests WHERE status >= 500 AND ts >= ?;
 -- name: CountRequestsInWindow :one
 SELECT COUNT(*) FROM requests WHERE ts >= ?;
 
--- name: CountAppErrorsSinceForAlert :one
-SELECT COUNT(*) FROM app_logs WHERE level = 'ERROR' AND ts >= ?;
-
--- name: TopAppErrorAppsSince :many
-SELECT app, COUNT(*) AS cnt FROM app_logs WHERE level = 'ERROR' AND ts >= ?
-GROUP BY app ORDER BY cnt DESC LIMIT 5;
+-- name: AppErrorSummarySince :many
+-- One row per app with errors in the window, carrying the most recent message as
+-- a sample. `message` is a bare column against MAX(ts): SQLite documents that as
+-- taking the value from the row holding the max, which is exactly the sample we
+-- want. Alerting is per app, so no ORDER BY or LIMIT: a chatty app must not be
+-- able to push the first error of a quieter app off the list.
+SELECT app, COUNT(*) AS cnt, message AS sample, MAX(ts) AS last_ts
+FROM app_logs WHERE level = 'ERROR' AND ts >= ?
+GROUP BY app;
 
 -- name: DeleteAlertLogsBeforeBatch :execresult
 DELETE FROM alert_log WHERE id IN (

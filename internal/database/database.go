@@ -120,6 +120,19 @@ var onceMigrations = []onceMigration{
 	// Write-only columns. Space is not reclaimed until a VACUUM.
 	{"drop-requests-city", "ALTER TABLE requests DROP COLUMN city"},
 	{"drop-uptime-checks-created-at", "ALTER TABLE uptime_checks DROP COLUMN created_at"},
+	// Blocking retired — Cloudflare does it now. The Caddy admin API sync was
+	// removed earlier; these tables and the block flag outlived it, recording
+	// decisions that no longer had any effect. The alert_log rows must go before
+	// their rule: rule_id is a NOT NULL foreign key and foreign_keys is on.
+	{"delete-auto-block-alert-log", "DELETE FROM alert_log WHERE rule_id IN (SELECT id FROM alert_rules WHERE type = 'auto_block')"},
+	{"delete-auto-block-rule", "DELETE FROM alert_rules WHERE type = 'auto_block'"},
+	{"drop-blocked-ips", "DROP TABLE IF EXISTS blocked_ips"},
+	{"drop-autoblock-rules", "DROP TABLE IF EXISTS autoblock_rules"},
+	{"drop-honeypots", "DROP TABLE IF EXISTS honeypots"},
+	{"drop-bot-patterns-block", "ALTER TABLE bot_patterns DROP COLUMN block"},
+	// A single app error now alerts, scoped per app rather than counted across
+	// all of them. The seed only applies to fresh databases.
+	{"app-error-per-app", "UPDATE alert_rules SET threshold = 1, window_minutes = 5, cooldown_minutes = 30 WHERE type = 'app_error'"},
 }
 
 // runOnce applies any onceMigration not yet recorded in schema_migrations.

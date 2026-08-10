@@ -53,28 +53,10 @@ type AppLog struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type AutoblockRule struct {
-	ID          int64        `json:"id"`
-	Pattern     string       `json:"pattern"`
-	Description string       `json:"description"`
-	Enabled     int64        `json:"enabled"`
-	HitCount    int64        `json:"hit_count"`
-	LastHitAt   sql.NullTime `json:"last_hit_at"`
-	CreatedAt   time.Time    `json:"created_at"`
-}
-
-type BlockedIp struct {
-	ID        int64     `json:"id"`
-	Ip        string    `json:"ip"`
-	Reason    string    `json:"reason"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type BotPattern struct {
 	ID        int64     `json:"id"`
 	Pattern   string    `json:"pattern"`
 	Label     string    `json:"label"`
-	Block     int64     `json:"block"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -86,16 +68,6 @@ type DailyStat struct {
 	Errors      int64   `json:"errors"`
 	AvgDuration float64 `json:"avg_duration"`
 	Bytes       int64   `json:"bytes"`
-}
-
-type Honeypot struct {
-	ID          int64        `json:"id"`
-	Path        string       `json:"path"`
-	Description string       `json:"description"`
-	Enabled     int64        `json:"enabled"`
-	HitCount    int64        `json:"hit_count"`
-	LastHitAt   sql.NullTime `json:"last_hit_at"`
-	CreatedAt   time.Time    `json:"created_at"`
 }
 
 type Request struct {

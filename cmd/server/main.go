@@ -63,26 +63,6 @@ func main() {
 	}
 	matcher.Load(botPatterns)
 
-	// Auto-blocker (blocks IPs by request path patterns)
-	autoBlocker := watcher.NewAutoBlocker(q)
-	abRules, err := q.ListEnabledAutoblockRules(context.Background())
-	if err != nil {
-		slog.Error("load autoblock rules", "err", err)
-		os.Exit(1)
-	}
-	autoBlocker.Load(abRules)
-	slog.Info("autoblocker loaded", "rules", len(abRules))
-
-	// Honeypot checker (blocks IPs by honeypot path patterns)
-	honeypotChecker := watcher.NewHoneypotChecker(q)
-	hpRules, err := q.ListEnabledHoneypots(context.Background())
-	if err != nil {
-		slog.Error("load honeypot rules", "err", err)
-		os.Exit(1)
-	}
-	honeypotChecker.Load(hpRules)
-	slog.Info("honeypot checker loaded", "rules", len(hpRules))
-
 	// GeoIP resolver (graceful degradation if .mmdb not found)
 	geoResolver, _ := geoip.New(cfg.GeoIPDBPath)
 	if geoResolver != nil {
@@ -92,7 +72,7 @@ func main() {
 	// Alert engine
 	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
 
-	h := handlers.New(sqlDB, q, pages, matcher, autoBlocker, honeypotChecker, alertEngine, &cfg)
+	h := handlers.New(sqlDB, q, pages, matcher, alertEngine, &cfg)
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -100,7 +80,7 @@ func main() {
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
-		w := watcher.New(cfg.LogPath, sqlDB, q, matcher, autoBlocker, honeypotChecker, geoResolver, cfg.IgnoreHosts, cfg.IgnoreUserAgents)
+		w := watcher.New(cfg.LogPath, sqlDB, q, matcher, geoResolver, cfg.IgnoreHosts, cfg.IgnoreUserAgents)
 		go func() {
 			if err := w.Run(ctx); err != nil && err != context.Canceled {
 				slog.Error("watcher stopped", "err", err)
@@ -118,25 +98,20 @@ func main() {
 	// doing that synchronously kept the process alive but not listening — the
 	// deploy's is-active check passed while Caddy served 502s for a minute. The
 	// batching exists precisely so this can run against a live server.
+	// The rollup's catch-up scan is a full table scan, and it is only needed for
+	// days the hourly pass missed — which requires the process to have been down.
+	// Startup is therefore the only time it can find anything, so it runs once
+	// here and the hourly passes skip it.
+	firstPass := true
 	maintain := func() {
 		// Roll up before pruning, always — otherwise a day can be deleted from
 		// raw before it has been aggregated.
-		if err := database.Rollup(ctx, q); err != nil {
+		if err := database.Rollup(ctx, q, firstPass); err != nil {
 			slog.Error("rollup", "err", err)
 		}
+		firstPass = false
 		if err := database.Prune(ctx, q, retention); err != nil {
 			slog.Error("prune", "err", err)
-		}
-		res, err := q.PruneAutoBlockedIPs(ctx, time.Now().Add(-48*time.Hour))
-		if err != nil {
-			slog.Error("prune auto-blocked IPs", "err", err)
-			return
-		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			slog.Info("pruned stale auto-blocked IPs", "count", n)
-			// Reset dedup maps so returning IPs can be re-blocked
-			autoBlocker.ResetDedup()
-			honeypotChecker.ResetDedup()
 		}
 	}
 
@@ -209,19 +184,7 @@ func main() {
 	// Bot management
 	mux.HandleFunc("GET /bots", h.ListBots)
 	mux.HandleFunc("POST /bots", h.CreateBot)
-	mux.HandleFunc("POST /bots/{id}/toggle", h.ToggleBotBlock)
 	mux.HandleFunc("POST /bots/{id}/delete", h.DeleteBot)
-
-	// IP blocklist
-	mux.HandleFunc("GET /ips", h.ListBlockedIPs)
-	mux.HandleFunc("POST /ips", h.BlockIP)
-	mux.HandleFunc("POST /ips/{id}/delete", h.UnblockIP)
-
-	// Auto-block rules
-	mux.HandleFunc("GET /autoblock", h.ListAutoblockRules)
-	mux.HandleFunc("POST /autoblock", h.CreateAutoblockRule)
-	mux.HandleFunc("POST /autoblock/{id}/toggle", h.ToggleAutoblockRule)
-	mux.HandleFunc("POST /autoblock/{id}/delete", h.DeleteAutoblockRule)
 
 	// Alerts
 	mux.HandleFunc("GET /alerts", h.ListAlertRules)
@@ -229,12 +192,6 @@ func main() {
 	mux.HandleFunc("POST /alerts/{id}/toggle", h.ToggleAlertRule)
 	mux.HandleFunc("POST /alerts/{id}/delete", h.DeleteAlertRule)
 	mux.HandleFunc("GET /partials/alert-log", h.AlertLogPanel)
-
-	// Honeypots
-	mux.HandleFunc("GET /honeypots", h.ListHoneypots)
-	mux.HandleFunc("POST /honeypots", h.CreateHoneypot)
-	mux.HandleFunc("POST /honeypots/{id}/toggle", h.ToggleHoneypot)
-	mux.HandleFunc("POST /honeypots/{id}/delete", h.DeleteHoneypot)
 
 	// History
 	mux.HandleFunc("GET /history", h.History)

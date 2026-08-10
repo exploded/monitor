@@ -172,18 +172,60 @@ func (h *Handler) ToggleUptimeTarget(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	h.q.ToggleUptimeTarget(r.Context(), id)
+	if err := h.q.ToggleUptimeTarget(r.Context(), id); err != nil {
+		slog.Error("toggle uptime target", "id", id, "err", err)
+		http.Error(w, "failed to toggle target", http.StatusInternalServerError)
+		return
+	}
 	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
 }
 
-// DeleteUptimeTarget removes an uptime target.
+// DeleteUptimeTarget removes an uptime target and the history hanging off it.
+//
+// uptime_checks.target_id and uptime_daily.target_id are foreign keys without
+// ON DELETE CASCADE, and foreign_keys is on, so deleting the target alone fails
+// the moment a single check exists — which is always. The error used to be
+// discarded and the handler redirected anyway, so the UI reported success while
+// the target stayed put and kept being probed.
 func (h *Handler) DeleteUptimeTarget(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
-	h.q.DeleteUptimeTarget(r.Context(), id)
+
+	ctx := r.Context()
+	tx, err := h.rawDB.Begin()
+	if err != nil {
+		slog.Error("delete uptime target begin tx", "id", id, "err", err)
+		http.Error(w, "failed to delete target", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	qtx := h.q.WithTx(tx)
+	// Children first, then the target: the reverse order trips the constraint.
+	if err := qtx.DeleteUptimeChecksForTarget(ctx, id); err != nil {
+		slog.Error("delete uptime checks", "id", id, "err", err)
+		http.Error(w, "failed to delete target", http.StatusInternalServerError)
+		return
+	}
+	if err := qtx.DeleteUptimeDailyForTarget(ctx, id); err != nil {
+		slog.Error("delete uptime daily", "id", id, "err", err)
+		http.Error(w, "failed to delete target", http.StatusInternalServerError)
+		return
+	}
+	if err := qtx.DeleteUptimeTarget(ctx, id); err != nil {
+		slog.Error("delete uptime target", "id", id, "err", err)
+		http.Error(w, "failed to delete target", http.StatusInternalServerError)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		slog.Error("delete uptime target commit", "id", id, "err", err)
+		http.Error(w, "failed to delete target", http.StatusInternalServerError)
+		return
+	}
+
 	http.Redirect(w, r, "/uptime", http.StatusSeeOther)
 }
 

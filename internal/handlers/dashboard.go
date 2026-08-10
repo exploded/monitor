@@ -33,11 +33,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	// IP reputation scores
 	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
-	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
-	blockedSet := make(map[string]bool, len(blockedIPs))
-	for _, ip := range blockedIPs {
-		blockedSet[ip.Ip] = true
-	}
 	ipScores := make(map[string]int)
 	for _, row := range repData {
 		var firstSeen, lastSeen time.Time
@@ -54,7 +49,6 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			BotCount:  int64(row.BotCount.Float64),
 			FirstSeen: firstSeen,
 			LastSeen:  lastSeen,
-			IsBlocked: blockedSet[row.ClientIp],
 		})
 		if score.Value >= 26 {
 			ipScores[row.ClientIp] = score.Value
@@ -132,11 +126,6 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 
 	// IP reputation scores for top IPs
 	repData, _ := h.q.IPReputationData(ctx, db.IPReputationDataParams{Ts: since, Limit: 50})
-	blockedIPs, _ := h.q.ListBlockedIPs(ctx)
-	blockedSet := make(map[string]bool, len(blockedIPs))
-	for _, ip := range blockedIPs {
-		blockedSet[ip.Ip] = true
-	}
 	ipScores := make(map[string]int)
 	for _, row := range repData {
 		var firstSeen, lastSeen time.Time
@@ -153,7 +142,6 @@ func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 			BotCount:  int64(row.BotCount.Float64),
 			FirstSeen: firstSeen,
 			LastSeen:  lastSeen,
-			IsBlocked: blockedSet[row.ClientIp],
 		})
 		if score.Value >= 26 {
 			ipScores[row.ClientIp] = score.Value

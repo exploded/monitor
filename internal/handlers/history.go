@@ -30,19 +30,20 @@ var rangeLabels = map[string]string{
 	"7d":  "last 7 days",
 }
 
-// RawRetentionDays mirrors the raw `requests` horizon. Search and export are
-// floored to it: raw rows older than this no longer exist, so accepting an
-// earlier ?from= would silently return a truncated result set while scanning
-// the whole table to do it. Longer history lives in daily_stats.
-const RawRetentionDays = 30
-
 // searchFloor is the earliest instant search and export will look back to.
-func searchFloor() time.Time {
-	return time.Now().UTC().AddDate(0, 0, -RawRetentionDays)
+//
+// It reads the configured raw `requests` horizon rather than a constant: raw
+// rows older than that no longer exist, so accepting an earlier ?from= would
+// silently return a truncated result set while scanning the whole table to do
+// it. Hard-coding 30 here meant RETENTION_DAYS could be changed in .env and
+// search would keep offering — or refusing — the wrong range. Longer history
+// lives in daily_stats.
+func (h *Handler) searchFloor() time.Time {
+	return time.Now().UTC().AddDate(0, 0, -h.cfg.RetentionDays)
 }
 
 // DailySummaryDays is how far back the daily table reaches. It reads
-// daily_stats rather than raw rows, so it is not tied to RawRetentionDays and
+// daily_stats rather than raw rows, so it is not tied to the raw horizon and
 // costs one row per day — otherwise the rollup would retain history nothing
 // ever displays.
 const DailySummaryDays = 90
@@ -54,20 +55,20 @@ func dailySummaryFrom() string {
 
 // searchMinDate is the earliest date the search picker offers. Search reads raw
 // rows, so it is bounded by the raw horizon, not the rollup's.
-func searchMinDate() string {
-	return searchFloor().Format("2006-01-02")
+func (h *Handler) searchMinDate() string {
+	return h.searchFloor().Format("2006-01-02")
 }
 
 // clampFrom parses a YYYY-MM-DD ?from= value and floors it to the raw retention
 // horizon, defaulting to 24h back when absent or unparseable.
-func clampFrom(fromStr string) time.Time {
+func (h *Handler) clampFrom(fromStr string) time.Time {
 	from := time.Now().UTC().Add(-24 * time.Hour)
 	if fromStr != "" {
 		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
 			from = t.UTC()
 		}
 	}
-	if floor := searchFloor(); from.Before(floor) {
+	if floor := h.searchFloor(); from.Before(floor) {
 		return floor
 	}
 	return from
@@ -168,7 +169,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"Range":         rng,
 			"RangeLabel":    rangeLabels[rng],
 			"LabelStep":     step,
-			"SearchMinDate": searchMinDate(),
+			"SearchMinDate": h.searchMinDate(),
 		},
 	})
 }
@@ -610,7 +611,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		statusFilter, _ = strconv.ParseInt(statusStr, 10, 64)
 	}
 
-	from := clampFrom(fromStr)
+	from := h.clampFrom(fromStr)
 	to := time.Now().UTC()
 	if toStr != "" {
 		if t, err := time.Parse("2006-01-02", toStr); err == nil {

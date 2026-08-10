@@ -9,10 +9,9 @@ import (
 )
 
 // newTestWatcher builds a Watcher with just enough wired up to exercise
-// processLine. autoBlocker and honeypotChecker are nil-checked at the call
-// site, and geo.Lookup is nil-safe.
+// processLine. geo.Lookup is nil-safe.
 func newTestWatcher(ignoreUAs []string) *Watcher {
-	return New("", nil, nil, NewBotMatcher(), nil, nil, nil, nil, ignoreUAs)
+	return New("", nil, nil, NewBotMatcher(), nil, nil, ignoreUAs)
 }
 
 func logLine(t *testing.T, ua string) []byte {
@@ -59,8 +58,8 @@ func TestMonitorProbesAreAlwaysSkipped(t *testing.T) {
 
 // TestGoDefaultUserAgentIsNotSkipped is the regression guard for the blind spot
 // this replaced. IGNORE_USER_AGENTS used to contain "Go-http-client", and the
-// skip happens before bot matching, auto-blocking and the honeypot check — so
-// any scanner sending Go's default UA was invisible and unblockable.
+// skip happens before bot matching — so any scanner sending Go's default UA was
+// invisible in the request log entirely.
 func TestGoDefaultUserAgentIsNotSkipped(t *testing.T) {
 	for _, ua := range []string{"Go-http-client/1.1", "Go-http-client/2.0"} {
 		w := newTestWatcher(nil)

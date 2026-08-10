@@ -25,38 +25,12 @@ func (h *Handler) CreateBot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	block := int64(0)
-	if r.FormValue("block") == "1" {
-		block = 1
-	}
-
 	if err := h.q.CreateBotPattern(r.Context(), db.CreateBotPatternParams{
 		Pattern: pattern,
 		Label:   label,
-		Block:   block,
 	}); err != nil {
 		slog.Error("create bot pattern", "err", err)
 		http.Error(w, "failed to create pattern", http.StatusInternalServerError)
-		return
-	}
-
-	h.refreshBotMatcher(r.Context())
-
-	patterns, _ := h.q.ListBotPatterns(r.Context())
-	h.renderBotList(w, patterns)
-}
-
-// ToggleBotBlock toggles the block flag for a bot pattern.
-func (h *Handler) ToggleBotBlock(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid id", http.StatusBadRequest)
-		return
-	}
-
-	if err := h.q.ToggleBotBlock(r.Context(), id); err != nil {
-		slog.Error("toggle bot block", "err", err)
-		http.Error(w, "failed to toggle", http.StatusInternalServerError)
 		return
 	}
 

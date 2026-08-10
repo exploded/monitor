@@ -71,7 +71,6 @@ PORT=8989
 PROD=true
 DB_PATH=/var/www/monitor/monitor.db
 LOG_PATH=/var/log/caddy/access.log
-CADDY_ADMIN_URL=http://localhost:2019
 AUTH_USER=admin
 AUTH_PASS=CHANGE_ME_TO_A_STRONG_PASSWORD
 RETENTION_DAYS=30
@@ -81,6 +80,9 @@ APP_LOG_NOISE_RETENTION_DAYS=14
 ANOMALY_RETENTION_DAYS=90
 ALERT_LOG_RETENTION_DAYS=180
 LOG_API_KEY=CHANGE_ME_TO_A_RANDOM_KEY
+# Required for alerts to be delivered anywhere. Empty = every alert is dropped
+# silently. Discord → Server Settings → Integrations → Webhooks → New Webhook.
+DISCORD_WEBHOOK_URL=
 GEOIP_DB_PATH=/var/lib/GeoIP/GeoLite2-City.mmdb
 # Monitor's own uptime probes are always skipped; this is for extra entries only.
 # Never add "Go-http-client" — it would hide every Go-written scanner.

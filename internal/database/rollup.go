@@ -24,18 +24,30 @@ const rollupRetentionDays = 400
 //
 // Must run before Prune, or a day can be deleted from raw before it has been
 // aggregated.
-func Rollup(ctx context.Context, q *db.Queries) error {
+//
+// backfill controls the catch-up scan for days present in raw but absent from
+// the rollup. That scan cannot be bounded by a date range — its whole job is to
+// find days the hourly pass never saw, including ones older than the retention
+// horizon that Prune is about to delete — so it is a full table scan, measured
+// at seconds on a month of traffic. It is only needed after the process has
+// missed a day, which means a restart, so it runs once at startup and the
+// hourly passes recompute today and yesterday alone.
+func Rollup(ctx context.Context, q *db.Queries, backfill bool) error {
 	today := time.Now().UTC().Format("2006-01-02")
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 
 	days := map[string]bool{today: true, yesterday: true}
 
-	missing, err := q.DaysMissingFromDailyStats(ctx)
-	if err != nil {
-		return fmt.Errorf("find missing daily_stats days: %w", err)
-	}
-	for _, d := range missing {
-		days[dayString(d)] = true
+	var missing []interface{}
+	if backfill {
+		var err error
+		missing, err = q.DaysMissingFromDailyStats(ctx)
+		if err != nil {
+			return fmt.Errorf("find missing daily_stats days: %w", err)
+		}
+		for _, d := range missing {
+			days[dayString(d)] = true
+		}
 	}
 
 	var firstErr error
@@ -55,12 +67,16 @@ func Rollup(ctx context.Context, q *db.Queries) error {
 	}
 
 	uptimeDays := map[string]bool{today: true, yesterday: true}
-	missingUptime, err := q.DaysMissingFromUptimeDaily(ctx)
-	if err != nil {
-		return fmt.Errorf("find missing uptime_daily days: %w", err)
-	}
-	for _, d := range missingUptime {
-		uptimeDays[dayString(d)] = true
+	var missingUptime []interface{}
+	if backfill {
+		var err error
+		missingUptime, err = q.DaysMissingFromUptimeDaily(ctx)
+		if err != nil {
+			return fmt.Errorf("find missing uptime_daily days: %w", err)
+		}
+		for _, d := range missingUptime {
+			uptimeDays[dayString(d)] = true
+		}
 	}
 	for day := range uptimeDays {
 		if err := ctx.Err(); err != nil {
