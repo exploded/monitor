@@ -133,6 +133,11 @@ var onceMigrations = []onceMigration{
 	// A single app error now alerts, scoped per app rather than counted across
 	// all of them. The seed only applies to fresh databases.
 	{"app-error-per-app", "UPDATE alert_rules SET threshold = 1, window_minutes = 5, cooldown_minutes = 30 WHERE type = 'app_error'"},
+	// rate_spike and new_scanner are noise on a public host and nothing here can
+	// act on them (blocking is Cloudflare's). Off by default; the anomalies are
+	// still recorded for the Security page. Once-only, so re-enabling from the
+	// UI sticks across restarts.
+	{"disable-scanner-alerts", "UPDATE alert_rules SET enabled = 0 WHERE type IN ('rate_spike', 'new_scanner')"},
 }
 
 // runOnce applies any onceMigration not yet recorded in schema_migrations.

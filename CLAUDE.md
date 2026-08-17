@@ -95,6 +95,7 @@ Discord webhook is the only transport. **If `DISCORD_WEBHOOK_URL` is unset, no a
 
 - Polled every 30s: `5xx_spike`, `traffic_surge` (count over a window vs threshold), and `app_error`.
 - Event-driven via `Notify`: `downtime` from the uptime checker, and the three anomaly types.
+- `rate_spike` and `new_scanner` are **disabled by default** (seed + `disable-scanner-alerts` migration). They trip constantly on any public host and nothing here can act on them, so they are recorded for the Security page but stay out of Discord unless toggled on at `/alerts`. Do not re-enable them in the seed.
 - `app_error` is per app: any ERROR from an app alerts on the next tick, with a per-app cooldown so one chatty app cannot spam you or mask another app's first error.
 - Cooldowns are keyed per subject (`downtime:<target-id>`, or the app name), not per rule, so two services failing in the same window produce two alerts.
 - Downtime needs `failuresBeforeAlert` consecutive failures (2), and every outage gets a matching green recovery notification.

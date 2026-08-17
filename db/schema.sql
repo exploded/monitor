@@ -101,14 +101,21 @@ CREATE INDEX IF NOT EXISTS idx_alert_log_created ON alert_log(created_at);
 -- The last three match the types the anomaly detector emits. Without them,
 -- Notify found no rule and silently no-opped while the anomaly row was still
 -- written — detections existed in the UI but never alerted.
-INSERT OR IGNORE INTO alert_rules (name, type, threshold, window_minutes, cooldown_minutes) VALUES
-    ('5xx Spike', '5xx_spike', 5, 5, 15),
-    ('Traffic Surge', 'traffic_surge', 500, 5, 30),
-    ('App Error', 'app_error', 1, 5, 30),
-    ('Downtime', 'downtime', 1, 1, 15),
-    ('Rate Spike', 'rate_spike', 1, 5, 60),
-    ('New Scanner', 'new_scanner', 1, 10, 60),
-    ('5xx Anomaly', '5xx_anomaly', 1, 60, 60);
+--
+-- rate_spike and new_scanner are seeded disabled. They fire constantly on any
+-- public host (a scanner walking /wp-admin trips new_scanner every time) and
+-- there is nothing to do about them here — blocking is Cloudflare's job. The
+-- detector still records them for the Security page; they just stay out of
+-- Discord unless toggled on from /alerts. 5xx_anomaly stays on: that one means
+-- your app is broken.
+INSERT OR IGNORE INTO alert_rules (name, type, enabled, threshold, window_minutes, cooldown_minutes) VALUES
+    ('5xx Spike', '5xx_spike', 1, 5, 5, 15),
+    ('Traffic Surge', 'traffic_surge', 1, 500, 5, 30),
+    ('App Error', 'app_error', 1, 1, 5, 30),
+    ('Downtime', 'downtime', 1, 1, 1, 15),
+    ('Rate Spike', 'rate_spike', 0, 1, 5, 60),
+    ('New Scanner', 'new_scanner', 0, 1, 10, 60),
+    ('5xx Anomaly', '5xx_anomaly', 1, 1, 60, 60);
 
 -- Uptime monitoring
 CREATE TABLE IF NOT EXISTS uptime_targets (
