@@ -3,6 +3,7 @@ package uptime
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -35,12 +36,26 @@ type Monitor struct {
 	state       map[int64]*targetState
 }
 
+// newClient builds the one HTTP client every probe shares, so that the tests
+// exercise the same configuration production runs on.
+//
+// The Timeout is the part that matters: http.Client's zero value has none, and a
+// target that accepts the connection then never answers would otherwise hang a
+// probe goroutine forever. It covers reading the response body too, which is
+// what bounds the drain in probe. Sharing the client is not what pools
+// connections -- a nil Transport means every client shares
+// http.DefaultTransport anyway; draining the body is what keeps a pooled
+// connection usable.
+func newClient() *http.Client {
+	return &http.Client{Timeout: 15 * time.Second}
+}
+
 // New creates an uptime Monitor.
 func New(q *db.Queries, alertEngine *alerts.Engine) *Monitor {
 	return &Monitor{
 		q:           q,
 		alertEngine: alertEngine,
-		client:      &http.Client{Timeout: 15 * time.Second},
+		client:      newClient(),
 		lastCheck:   make(map[int64]time.Time),
 		state:       make(map[int64]*targetState),
 	}
@@ -90,29 +105,63 @@ func (m *Monitor) checkAll(ctx context.Context) {
 	}
 }
 
+// probe performs one HTTP check and reports the status code the target returned.
+//
+// The body is drained before it is closed, on every path out of the function.
+// Closing a response body that still has unread bytes makes Go's transport
+// abandon the connection instead of returning it to the pool, and abandoning a
+// socket with data outstanding sends a TCP RST. The target's server is usually
+// still writing at that moment, so it sees a broken pipe and logs an error for
+// a request that succeeded from this side. Draining also lets the connection be
+// reused, which is the difference between a handshake per check and none.
+//
+// The symptom only shows on responses too big for one segment: a /health
+// endpoint replying with a couple of hundred bytes is fully buffered before
+// Close is ever called, so there is nothing left unread to trigger it.
+func (m *Monitor) probe(ctx context.Context, url string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, err
+	}
+	// Identify ourselves rather than sending Go's default Go-http-client/x.y.
+	// The watcher filters this exact UA out of the request log; matching on
+	// the generic Go default instead would hide every Go-written scanner.
+	req.Header.Set("User-Agent", config.MonitorUserAgent)
+
+	resp, err := m.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	// Deferred so that any return added below this line still drains. The drain
+	// is deliberately uncapped: capping it at, say, 1 MiB would reintroduce the
+	// exact bug for any target that serves more than that, since whatever is left
+	// unread is what triggers the reset. Nothing here is unbounded as a result --
+	// io.Discard keeps memory flat, and m.client's Timeout covers reading the
+	// body as well as the handshake, so a slow or endless target is cut off. A
+	// read error is not worth surfacing: the status code is already in hand, and
+	// a failed read cannot un-answer the request.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
+
+	return resp.StatusCode, nil
+}
+
 func (m *Monitor) checkTarget(ctx context.Context, t db.ListEnabledUptimeTargetsRow) {
 	start := time.Now()
 
-	var resp *http.Response
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.Url, nil)
-	if err == nil {
-		// Identify ourselves rather than sending Go's default Go-http-client/x.y.
-		// The watcher filters this exact UA out of the request log; matching on
-		// the generic Go default instead would hide every Go-written scanner.
-		req.Header.Set("User-Agent", config.MonitorUserAgent)
-		resp, err = m.client.Do(req)
-	}
+	status, err := m.probe(ctx, t.Url)
 
-	status := 0
-	errStr := ""
+	// Measured after the body has been drained, so this is time to a complete
+	// response rather than time to first byte.
 	responseTime := float64(time.Since(start).Milliseconds())
 
+	errStr := ""
 	if err != nil {
+		status = 0
 		errStr = err.Error()
 		slog.Warn("uptime check failed", "target", t.Name, "url", t.Url, "err", err)
-	} else {
-		status = resp.StatusCode
-		resp.Body.Close()
 	}
 
 	if insertErr := m.q.InsertUptimeCheck(ctx, db.InsertUptimeCheckParams{

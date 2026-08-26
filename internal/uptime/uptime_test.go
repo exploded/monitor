@@ -1,6 +1,10 @@
 package uptime
 
 import (
+	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -19,6 +23,7 @@ func testTarget(id int64, name string) db.ListEnabledUptimeTargetsRow {
 // alertEngine is the same nil-check the real code already performs.
 func newTestMonitor() *Monitor {
 	return &Monitor{
+		client:    newClient(),
 		lastCheck: make(map[int64]time.Time),
 		state:     make(map[int64]*targetState),
 	}
@@ -107,5 +112,96 @@ func TestPruneStateForgetsRemovedTargets(t *testing.T) {
 	}
 	if _, ok := m.state[live.ID]; !ok {
 		t.Error("state dropped for a still-enabled target")
+	}
+}
+
+// resetGrace is how long the test server waits, after writing its response, for
+// a connection reset to show up as a cancelled request context.
+const resetGrace = 2 * time.Second
+
+// TestProbeDrainsLargeResponseBody is the regression test for the broken-pipe
+// errors monitor was leaving in its targets' logs. It asserts on what the
+// server saw, because that is the only place the bug is visible: probe returns
+// a clean 200 either way, while the target at the other end takes a reset.
+//
+// The body has to be far bigger than one segment or the test proves nothing. A
+// short response is fully buffered before probe closes the body, so there is no
+// unread data to reset the connection and an undrained close looks healthy.
+//
+// Where the reset lands depends on the platform's socket buffers, so the
+// handler watches for both forms. On Linux the server is still blocked in Write
+// when the reset arrives and the write itself fails; on Windows, loopback
+// buffers swallow several MiB, so the write succeeds and the reset turns up
+// moments later as a cancelled request context.
+func TestProbeDrainsLargeResponseBody(t *testing.T) {
+	const bodySize = 4 << 20 // 4 MiB, far past a single segment
+
+	payload := bytes.Repeat([]byte("monitor-drain-test "), bodySize/19)
+	serverErr := make(chan error, 1)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+
+		_, err := w.Write(payload)
+		if err == nil {
+			// A client that drained the body leaves the connection open and
+			// pooled, so this waits out the full grace period and reports nil.
+			select {
+			case <-r.Context().Done():
+				err = r.Context().Err()
+			case <-time.After(resetGrace):
+			}
+		}
+		serverErr <- err
+	}))
+	defer srv.Close()
+
+	m := newTestMonitor()
+
+	status, err := m.probe(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("probe returned an error: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Errorf("status = %d, want %d", status, http.StatusOK)
+	}
+
+	select {
+	case err := <-serverErr:
+		if err != nil {
+			t.Fatalf("target's handler saw the connection fail (%v); the probe "+
+				"closed the body without draining it, which resets the connection", err)
+		}
+	case <-time.After(resetGrace + 30*time.Second):
+		t.Fatal("target's handler never finished writing its response")
+	}
+}
+
+// TestProbeReusesConnection covers the other half of the same bug: an undrained
+// close takes the connection out of the pool, so every check pays a fresh
+// handshake. Drained, a second probe of the same target should land on the
+// connection the first one opened.
+func TestProbeReusesConnection(t *testing.T) {
+	var conns []string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conns = append(conns, r.RemoteAddr)
+		w.Write(bytes.Repeat([]byte("x"), 64<<10))
+	}))
+	defer srv.Close()
+
+	m := newTestMonitor()
+	for i := range 2 {
+		if _, err := m.probe(context.Background(), srv.URL); err != nil {
+			t.Fatalf("probe %d: %v", i, err)
+		}
+	}
+
+	if len(conns) != 2 {
+		t.Fatalf("handler saw %d requests, want 2", len(conns))
+	}
+	if conns[0] != conns[1] {
+		t.Errorf("second probe opened a new connection (%s then %s); the first body was not drained back into the pool", conns[0], conns[1])
 	}
 }

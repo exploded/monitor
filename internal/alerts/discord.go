@@ -4,10 +4,20 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"time"
 )
+
+// discordClient is shared by every webhook send, so the timeout policy lives in
+// one place rather than being restated at the call site.
+//
+// This is tidiness, not a fix: connection pooling lives in the Transport, and a
+// client with a nil Transport uses the shared http.DefaultTransport, so building
+// a Client per call pooled connections perfectly well. What did leak connections
+// was closing the response body undrained -- see the drain in sendDiscord.
+var discordClient = &http.Client{Timeout: 10 * time.Second}
 
 // sendDiscord posts an embed message to a Discord webhook URL.
 func sendDiscord(webhookURL, title, description string, color int) {
@@ -30,13 +40,19 @@ func sendDiscord(webhookURL, title, description string, color int) {
 		return
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Post(webhookURL, "application/json", bytes.NewReader(body))
+	resp, err := discordClient.Post(webhookURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		slog.Error("discord send", "err", err)
 		return
 	}
-	defer resp.Body.Close()
+	// Drained as well as closed, so the connection goes back to the pool instead
+	// of being reset. Discord answers a good webhook with an empty 204, but a 429
+	// carries a JSON body explaining the rate limit -- exactly the case where the
+	// next alert is close behind and wants the connection.
+	defer func() {
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode >= 400 {
 		slog.Warn("discord webhook error", "status", resp.StatusCode)

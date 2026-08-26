@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -254,6 +255,14 @@ func (h *Handler) flush() {
 		fmt.Fprintf(os.Stderr, "logship: send error: %v\n", err)
 		return
 	}
+	// Drain before closing. Closing a body with bytes still unread makes the
+	// transport abandon the connection rather than pool it, and dropping a socket
+	// with data outstanding sends a TCP RST that the receiving end logs as a
+	// broken pipe -- so a log shipper would be manufacturing errors in the very
+	// server it ships to. It also costs a fresh handshake on every batch. The
+	// endpoint's replies are small, but an error page from a proxy in front of it
+	// need not be.
+	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
