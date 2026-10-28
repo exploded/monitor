@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
@@ -53,25 +54,73 @@ func dailySummaryFrom() string {
 	return time.Now().UTC().AddDate(0, 0, -DailySummaryDays).Format("2006-01-02")
 }
 
-// searchMinDate is the earliest date the search picker offers. Search reads raw
-// rows, so it is bounded by the raw horizon, not the rollup's.
+// searchMinDate is the earliest time the search picker offers, in the
+// datetime-local format. Search reads raw rows, so it is bounded by the raw
+// horizon, not the rollup's.
 func (h *Handler) searchMinDate() string {
-	return h.searchFloor().Format("2006-01-02")
+	return h.searchFloor().In(melbourne).Format("2006-01-02T15:04")
 }
 
-// clampFrom parses a YYYY-MM-DD ?from= value and floors it to the raw retention
-// horizon, defaulting to 24h back when absent or unparseable.
-func (h *Handler) clampFrom(fromStr string) time.Time {
-	from := time.Now().UTC().Add(-24 * time.Hour)
-	if fromStr != "" {
-		if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-			from = t.UTC()
+// parseSearchTime reads a search ?from= or ?to= value as Melbourne time: a
+// datetime-local value (2006-01-02T15:04), or a bare date for older links. A
+// bare date means the start of that day, or its last second when end is set.
+func parseSearchTime(s string, end bool) (time.Time, bool) {
+	if t, err := time.ParseInLocation("2006-01-02T15:04", s, melbourne); err == nil {
+		return t.UTC(), true
+	}
+	if t, err := time.ParseInLocation("2006-01-02", s, melbourne); err == nil {
+		if end {
+			t = t.AddDate(0, 0, 1).Add(-time.Second)
 		}
+		return t.UTC(), true
 	}
-	if floor := h.searchFloor(); from.Before(floor) {
-		return floor
+	return time.Time{}, false
+}
+
+// searchFilter is the parsed form of the search and export query parameters.
+type searchFilter struct {
+	host, ip, ua string
+	status       int64
+	from, to     time.Time
+	slowest      bool // sort=slowest: longest duration first
+}
+
+// parseSearch reads the search form. from defaults to 24h back and is floored
+// to the raw retention horizon; to defaults to now.
+func (h *Handler) parseSearch(r *http.Request) searchFilter {
+	q := r.URL.Query()
+	f := searchFilter{
+		host:    q.Get("host"),
+		ip:      q.Get("ip"),
+		ua:      q.Get("ua"),
+		from:    time.Now().UTC().Add(-24 * time.Hour),
+		to:      time.Now().UTC(),
+		slowest: q.Get("sort") == "slowest",
 	}
-	return from
+	f.status, _ = strconv.ParseInt(q.Get("status"), 10, 64)
+	if t, ok := parseSearchTime(q.Get("from"), false); ok {
+		f.from = t
+	}
+	if t, ok := parseSearchTime(q.Get("to"), true); ok {
+		f.to = t
+	}
+	if floor := h.searchFloor(); f.from.Before(floor) {
+		f.from = floor
+	}
+	return f
+}
+
+// formatMs renders a duration in milliseconds for tables and axis labels:
+// "4 ms", "109 ms", "1 s", "3.7 s", "25 s".
+func formatMs(ms float64) string {
+	switch {
+	case ms < 1000:
+		return fmt.Sprintf("%.0f ms", ms)
+	case ms < 10000:
+		return strings.TrimSuffix(strconv.FormatFloat(ms/1000, 'f', 1, 64), ".0") + " s"
+	default:
+		return fmt.Sprintf("%.0f s", ms/1000)
+	}
 }
 
 // parseRange returns the since time and range key from a request's "range" query param.
@@ -147,7 +196,7 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 		LatencyExclude: h.cfg.LatencyExcludeJSON(),
 	})
 
-	latencyPoints, maxLatency, chartWidth := computeLatencyPoints(durRows)
+	latencyPoints, latencyTicks, chartWidth := computeLatencyPoints(durRows)
 
 	// Bandwidth for initial page load
 	bwRows, _ := h.q.HourlyBandwidth(ctx, db.HourlyBandwidthParams{
@@ -164,8 +213,8 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 			"Bars":          bars,
 			"Daily":         daily,
 			"LatencyPoints": latencyPoints,
-			"MaxLatency":    maxLatency,
-			"ChartWidth":    chartWidth + 20,
+			"LatencyTicks":  latencyTicks,
+			"ChartWidth":    chartWidth,
 			"BWBars":        bwBars,
 			"Range":         rng,
 			"RangeLabel":    rangeLabels[rng],
@@ -262,7 +311,7 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 		LatencyExclude: h.cfg.LatencyExcludeJSON(),
 	})
 
-	points, maxVal, chartWidth := computeLatencyPoints(rows)
+	points, ticks, chartWidth := computeLatencyPoints(rows)
 
 	tmpl, ok := h.pages["history"]
 	if !ok {
@@ -272,7 +321,7 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data := PageData{Extra: map[string]any{
 		"LatencyPoints": points,
-		"MaxLatency":    maxVal,
+		"LatencyTicks":  ticks,
 		"ChartWidth":    chartWidth,
 		"RangeLabel":    rangeLabels[rng],
 		"LabelStep":     labelStep(len(points)),
@@ -317,8 +366,48 @@ type LatencyPoint struct {
 	Y50, Y95, Y99 int
 }
 
-// computeLatencyPoints groups hourly duration rows into percentile points with SVG coordinates.
-func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, float64, int) {
+// LatencyTick is one gridline on the latency chart's log axis.
+type LatencyTick struct {
+	Y      int     // SVG y, for the gridline
+	TopPct float64 // the same height as a percentage, for the HTML label
+	Label  string
+}
+
+// The latency chart's plot area within its 160-unit-high viewBox.
+const (
+	latencyTop    = 4
+	latencyBottom = 152
+	latencyHeight = 160
+)
+
+// latencyAxis builds a log10 axis from 1 ms to the decade above maxMs, never
+// lower than 1 s. Linear was useless here: a 3.7 s p99 squashed a 2 ms p50 and
+// a 100 ms p95 into the same flat line along the bottom. Log gives each decade
+// the same height and fixed gridlines, so lines stay comparable across ranges.
+func latencyAxis(maxMs float64) (y func(ms float64) int, ticks []LatencyTick) {
+	hi := 3.0 // 1 s
+	if maxMs > 0 {
+		hi = math.Max(hi, math.Ceil(math.Log10(maxMs)))
+	}
+	y = func(ms float64) int {
+		l := math.Log10(math.Max(ms, 1)) // under 1 ms sits on the floor
+		l = math.Min(l, hi)
+		return latencyBottom - int(math.Round(l/hi*(latencyBottom-latencyTop)))
+	}
+	for e := 0.0; e <= hi; e++ {
+		ty := y(math.Pow(10, e))
+		ticks = append(ticks, LatencyTick{
+			Y:      ty,
+			TopPct: float64(ty) / latencyHeight * 100,
+			Label:  formatMs(math.Pow(10, e)),
+		})
+	}
+	return y, ticks
+}
+
+// computeLatencyPoints groups hourly duration rows into percentile points with
+// SVG coordinates on a log axis, and returns the axis gridlines.
+func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, []LatencyTick, int) {
 	var points []LatencyPoint
 	var curHour string
 	var durations []float64
@@ -357,9 +446,7 @@ func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, float64
 			maxVal = p.P99
 		}
 	}
-	if maxVal == 0 {
-		maxVal = 1
-	}
+	y, ticks := latencyAxis(maxVal)
 
 	chartWidth := 20
 	if len(points) > 1 {
@@ -368,12 +455,12 @@ func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, float64
 
 	for i := range points {
 		points[i].X = i * 40
-		points[i].Y50 = 150 - int(points[i].P50/maxVal*148)
-		points[i].Y95 = 150 - int(points[i].P95/maxVal*148)
-		points[i].Y99 = 150 - int(points[i].P99/maxVal*148)
+		points[i].Y50 = y(points[i].P50)
+		points[i].Y95 = y(points[i].P95)
+		points[i].Y99 = y(points[i].P99)
 	}
 
-	return points, maxVal, chartWidth
+	return points, ticks, chartWidth
 }
 
 // BWBar holds pre-computed bar chart data for bandwidth.
@@ -598,45 +685,42 @@ func (h *Handler) buildUptimeChartData(r *http.Request) PageData {
 // Search handles filtered request search.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	q := r.URL.Query()
+	f := h.parseSearch(r)
 
-	host := q.Get("host")
-	ip := q.Get("ip")
-	ua := q.Get("ua")
-	statusStr := q.Get("status")
-	fromStr := q.Get("from")
-	toStr := q.Get("to")
-	pageStr := q.Get("page")
-
-	var statusFilter int64
-	if statusStr != "" {
-		statusFilter, _ = strconv.ParseInt(statusStr, 10, 64)
-	}
-
-	from := h.clampFrom(fromStr)
-	to := time.Now().UTC()
-	if toStr != "" {
-		if t, err := time.Parse("2006-01-02", toStr); err == nil {
-			to = t.Add(24*time.Hour - time.Second)
-		}
-	}
-
-	page, _ := strconv.ParseInt(pageStr, 10, 64)
+	page, _ := strconv.ParseInt(r.URL.Query().Get("page"), 10, 64)
 	if page < 0 {
 		page = 0
 	}
 	limit := int64(50)
 
-	results, _ := h.q.SearchRequests(ctx, db.SearchRequestsParams{
-		HostFilter:   host,
-		IpFilter:     ip,
-		StatusFilter: statusFilter,
-		UaFilter:     ua,
-		FromTs:       from,
-		ToTs:         to,
+	params := db.SearchRequestsParams{
+		HostFilter:   f.host,
+		IpFilter:     f.ip,
+		StatusFilter: f.status,
+		UaFilter:     f.ua,
+		FromTs:       f.from,
+		ToTs:         f.to,
 		Lim:          limit,
 		Off:          page * limit,
-	})
+	}
+	var results []db.SearchRequestsRow
+	if f.slowest {
+		rows, _ := h.q.SearchRequestsSlowest(ctx, db.SearchRequestsSlowestParams{
+			HostFilter: f.host, IpFilter: f.ip, StatusFilter: f.status, UaFilter: f.ua,
+			FromTs: f.from, ToTs: f.to, LatencyExclude: h.cfg.LatencyExcludeJSON(),
+			Lim: limit, Off: page * limit,
+		})
+		for _, row := range rows {
+			results = append(results, db.SearchRequestsRow(row))
+		}
+	} else {
+		results, _ = h.q.SearchRequests(ctx, params)
+	}
+
+	// The form's own values, escaped, for the Load More link. Building this by
+	// hand broke on a user agent containing & or a space.
+	query := r.URL.Query()
+	query.Del("page")
 
 	tmpl, ok := h.pages["history"]
 	if !ok {
@@ -646,7 +730,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	data := PageData{Extra: map[string]any{
 		"Results":  results,
-		"Query":    fmt.Sprintf("host=%s&ip=%s&ua=%s&status=%s&from=%s&to=%s", host, ip, ua, statusStr, fromStr, toStr),
+		"Query":    query.Encode(),
 		"NextPage": page + 1,
 		"HasMore":  int64(len(results)) == limit,
 	}}

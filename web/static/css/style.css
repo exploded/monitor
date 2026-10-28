@@ -267,6 +267,8 @@ tr:hover { background: var(--surface-hover); }
   font-size: 0.85rem;
   font-family: var(--font);
 }
+.search-time { display: flex; align-items: center; gap: 0.3rem; font-size: 0.8rem; color: var(--text-muted); }
+.search-form input[type="datetime-local"] { color-scheme: dark; }
 .search-form input:focus {
   outline: none;
   border-color: var(--primary);
@@ -372,6 +374,12 @@ tr:hover { background: var(--surface-hover); }
 
 /* ===== Line Charts ===== */
 .line-chart { width: 100%; height: 160px; }
+.latency-plot { display: flex; gap: 0.4rem; }
+.latency-plot .chart-wrap { flex: 1; min-width: 0; }
+/* Same height as .line-chart, so tick percentages line up with the gridlines. */
+.y-axis { position: relative; flex: none; width: 3rem; height: 160px; font-size: 0.65rem; color: var(--text-muted); }
+.y-axis span { position: absolute; right: 0; transform: translateY(-50%); white-space: nowrap; }
+.grid-line { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-legend { display: flex; gap: 1rem; margin-bottom: 0.5rem; font-size: 0.8rem; }
 .legend-item { display: flex; align-items: center; gap: 0.3rem; color: var(--text-muted); }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }

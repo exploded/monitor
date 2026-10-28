@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
 )
@@ -14,37 +13,31 @@ import (
 // ExportSearch streams search results as CSV or JSON download.
 func (h *Handler) ExportSearch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	q := r.URL.Query()
+	f := h.parseSearch(r)
+	format := r.URL.Query().Get("format")
 
-	host := q.Get("host")
-	ip := q.Get("ip")
-	ua := q.Get("ua")
-	statusStr := q.Get("status")
-	fromStr := q.Get("from")
-	toStr := q.Get("to")
-	format := q.Get("format")
-
-	var statusFilter int64
-	if statusStr != "" {
-		statusFilter, _ = strconv.ParseInt(statusStr, 10, 64)
+	params := db.SearchRequestsExportParams{
+		HostFilter:   f.host,
+		IpFilter:     f.ip,
+		StatusFilter: f.status,
+		UaFilter:     f.ua,
+		FromTs:       f.from,
+		ToTs:         f.to,
 	}
-
-	from := h.clampFrom(fromStr)
-	to := time.Now().UTC()
-	if toStr != "" {
-		if t, err := time.Parse("2006-01-02", toStr); err == nil {
-			to = t.Add(24*time.Hour - time.Second)
+	var results []db.SearchRequestsExportRow
+	var err error
+	if f.slowest {
+		var rows []db.SearchRequestsExportSlowestRow
+		rows, err = h.q.SearchRequestsExportSlowest(ctx, db.SearchRequestsExportSlowestParams{
+			HostFilter: f.host, IpFilter: f.ip, StatusFilter: f.status, UaFilter: f.ua,
+			FromTs: f.from, ToTs: f.to, LatencyExclude: h.cfg.LatencyExcludeJSON(),
+		})
+		for _, row := range rows {
+			results = append(results, db.SearchRequestsExportRow(row))
 		}
+	} else {
+		results, err = h.q.SearchRequestsExport(ctx, params)
 	}
-
-	results, err := h.q.SearchRequestsExport(ctx, db.SearchRequestsExportParams{
-		HostFilter:   host,
-		IpFilter:     ip,
-		StatusFilter: statusFilter,
-		UaFilter:     ua,
-		FromTs:       from,
-		ToTs:         to,
-	})
 	if err != nil {
 		http.Error(w, "query error", http.StatusInternalServerError)
 		return

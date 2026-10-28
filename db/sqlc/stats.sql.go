@@ -575,6 +575,188 @@ func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsEx
 	return items, nil
 }
 
+const searchRequestsExportSlowest = `-- name: SearchRequestsExportSlowest :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests
+WHERE (?1 = '' OR host = ?1)
+  AND (?2 = '' OR client_ip = ?2)
+  AND (?3 = 0
+       OR (?3 < 10 AND status / 100 = ?3)
+       OR (?3 >= 10 AND status = ?3))
+  AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
+  AND ts >= ?5 AND ts <= ?6
+  AND NOT EXISTS (
+    SELECT 1 FROM json_each(CAST(?7 AS TEXT)) AS x
+    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
+ORDER BY duration_ms DESC, id DESC
+LIMIT 10000
+`
+
+type SearchRequestsExportSlowestParams struct {
+	HostFilter     interface{} `json:"host_filter"`
+	IpFilter       interface{} `json:"ip_filter"`
+	StatusFilter   interface{} `json:"status_filter"`
+	UaFilter       interface{} `json:"ua_filter"`
+	FromTs         time.Time   `json:"from_ts"`
+	ToTs           time.Time   `json:"to_ts"`
+	LatencyExclude string      `json:"latency_exclude"`
+}
+
+type SearchRequestsExportSlowestRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
+}
+
+// SearchRequestsExport, slowest first. See SearchRequestsSlowest.
+func (q *Queries) SearchRequestsExportSlowest(ctx context.Context, arg SearchRequestsExportSlowestParams) ([]SearchRequestsExportSlowestRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchRequestsExportSlowest,
+		arg.HostFilter,
+		arg.IpFilter,
+		arg.StatusFilter,
+		arg.UaFilter,
+		arg.FromTs,
+		arg.ToTs,
+		arg.LatencyExclude,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchRequestsExportSlowestRow
+	for rows.Next() {
+		var i SearchRequestsExportSlowestRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ts,
+			&i.Host,
+			&i.ClientIp,
+			&i.Method,
+			&i.Uri,
+			&i.Status,
+			&i.Size,
+			&i.UserAgent,
+			&i.DurationMs,
+			&i.IsBot,
+			&i.Referer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const searchRequestsSlowest = `-- name: SearchRequestsSlowest :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests
+WHERE (?1 = '' OR host = ?1)
+  AND (?2 = '' OR client_ip = ?2)
+  AND (?3 = 0
+       OR (?3 < 10 AND status / 100 = ?3)
+       OR (?3 >= 10 AND status = ?3))
+  AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
+  AND ts >= ?5 AND ts <= ?6
+  AND NOT EXISTS (
+    SELECT 1 FROM json_each(CAST(?7 AS TEXT)) AS x
+    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
+ORDER BY duration_ms DESC, id DESC
+LIMIT ?9 OFFSET ?8
+`
+
+type SearchRequestsSlowestParams struct {
+	HostFilter     interface{} `json:"host_filter"`
+	IpFilter       interface{} `json:"ip_filter"`
+	StatusFilter   interface{} `json:"status_filter"`
+	UaFilter       interface{} `json:"ua_filter"`
+	FromTs         time.Time   `json:"from_ts"`
+	ToTs           time.Time   `json:"to_ts"`
+	LatencyExclude string      `json:"latency_exclude"`
+	Off            int64       `json:"off"`
+	Lim            int64       `json:"lim"`
+}
+
+type SearchRequestsSlowestRow struct {
+	ID         int64     `json:"id"`
+	Ts         time.Time `json:"ts"`
+	Host       string    `json:"host"`
+	ClientIp   string    `json:"client_ip"`
+	Method     string    `json:"method"`
+	Uri        string    `json:"uri"`
+	Status     int64     `json:"status"`
+	Size       int64     `json:"size"`
+	UserAgent  string    `json:"user_agent"`
+	DurationMs float64   `json:"duration_ms"`
+	IsBot      int64     `json:"is_bot"`
+	Referer    string    `json:"referer"`
+}
+
+// SearchRequests, slowest first. A separate query because sqlc's SQLite engine
+// does not rewrite parameters in ORDER BY: a sqlc.arg there is left in the SQL
+// as text. Keep the WHERE clause in step with SearchRequests. It also skips
+// LATENCY_EXCLUDE paths: long polls are slow by design and would fill the
+// first page. Newest-first still shows them.
+func (q *Queries) SearchRequestsSlowest(ctx context.Context, arg SearchRequestsSlowestParams) ([]SearchRequestsSlowestRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchRequestsSlowest,
+		arg.HostFilter,
+		arg.IpFilter,
+		arg.StatusFilter,
+		arg.UaFilter,
+		arg.FromTs,
+		arg.ToTs,
+		arg.LatencyExclude,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchRequestsSlowestRow
+	for rows.Next() {
+		var i SearchRequestsSlowestRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Ts,
+			&i.Host,
+			&i.ClientIp,
+			&i.Method,
+			&i.Uri,
+			&i.Status,
+			&i.Size,
+			&i.UserAgent,
+			&i.DurationMs,
+			&i.IsBot,
+			&i.Referer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const topCountriesSince = `-- name: TopCountriesSince :many
 SELECT country, COUNT(*) AS cnt
 FROM requests WHERE ts >= ? AND country != ''

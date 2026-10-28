@@ -65,6 +65,7 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 				return fmt.Sprintf("%d B", bytes)
 			}
 		},
+		"formatMs": formatMs,
 		"statusClass": func(status int64) string {
 			switch {
 			case status >= 500:

@@ -72,6 +72,7 @@ Config in `sqlc.yaml`. Engine: SQLite. Queries in `db/queries/*.sql`, schema in 
 - **Keep `db/queries/*.sql` ASCII-only.** sqlc rewrites `sqlc.arg()` into positional parameters using byte offsets, so one multi-byte rune (an em-dash in a comment is the easy mistake) shifts every later edit and silently corrupts a *different* query. The error points at the innocent query, not the comment. `TestQueryFilesAreASCII` guards this. `db/schema.sql` is exempt.
 - Deleting a query file does not delete its generated `db/sqlc/*.sql.go` — remove that by hand or the package won't compile.
 - Order of operations: edit queries and schema together, run `sqlc generate` once, then fix Go.
+- **No parameters in `ORDER BY`.** The SQLite engine doesn't rewrite a `sqlc.arg` there: it stays in the SQL as text and fails at runtime, while `sqlc generate` succeeds. That's why search has separate `...Slowest` queries; keep their `WHERE` clauses in step with the originals.
 
 ## Deployment
 

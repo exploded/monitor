@@ -11,6 +11,7 @@
         <th>URI</th>
         <th>Status</th>
         <th>Size</th>
+        <th>Duration</th>
         <th>User Agent</th>
         <th>Bot</th>
       </tr>
@@ -25,6 +26,7 @@
         <td class="uri-cell" title="{{.Uri}}">{{truncate .Uri 40}}</td>
         <td title="{{statusText .Status}}">{{.Status}}</td>
         <td>{{humanSize .Size}}</td>
+        <td>{{formatMs .DurationMs}}</td>
         <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 30}}</td>
         <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
       </tr>

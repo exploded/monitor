@@ -135,3 +135,41 @@ WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
 ORDER BY id DESC
 LIMIT 10000;
+
+-- SearchRequests, slowest first. A separate query because sqlc's SQLite engine
+-- does not rewrite parameters in ORDER BY: a sqlc.arg there is left in the SQL
+-- as text. Keep the WHERE clause in step with SearchRequests. It also skips
+-- LATENCY_EXCLUDE paths: long polls are slow by design and would fill the
+-- first page. Newest-first still shows them.
+-- name: SearchRequestsSlowest :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests
+WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
+  AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
+  AND (sqlc.arg(status_filter) = 0
+       OR (sqlc.arg(status_filter) < 10 AND status / 100 = sqlc.arg(status_filter))
+       OR (sqlc.arg(status_filter) >= 10 AND status = sqlc.arg(status_filter)))
+  AND (sqlc.arg(ua_filter) = '' OR user_agent LIKE '%' || sqlc.arg(ua_filter) || '%')
+  AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
+  AND NOT EXISTS (
+    SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
+    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
+ORDER BY duration_ms DESC, id DESC
+LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
+
+-- SearchRequestsExport, slowest first. See SearchRequestsSlowest.
+-- name: SearchRequestsExportSlowest :many
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+FROM requests
+WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
+  AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
+  AND (sqlc.arg(status_filter) = 0
+       OR (sqlc.arg(status_filter) < 10 AND status / 100 = sqlc.arg(status_filter))
+       OR (sqlc.arg(status_filter) >= 10 AND status = sqlc.arg(status_filter)))
+  AND (sqlc.arg(ua_filter) = '' OR user_agent LIKE '%' || sqlc.arg(ua_filter) || '%')
+  AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
+  AND NOT EXISTS (
+    SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
+    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
+ORDER BY duration_ms DESC, id DESC
+LIMIT 10000;

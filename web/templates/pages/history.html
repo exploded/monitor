@@ -20,6 +20,43 @@ document.getElementById('range-select').addEventListener('change', function() {
 });
 </script>
 
+{{/* Search, at the top so it's easy to find. From/To are Melbourne time. */}}
+<section class="panel panel-wide">
+  <h2>Search requests</h2>
+  <form id="search-form" hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
+    <input type="text" name="host" placeholder="Host">
+    <input type="text" name="ip" placeholder="IP">
+    <input type="text" name="ua" placeholder="User Agent">
+    <select name="status">
+      <option value="">Any Status</option>
+      <option value="2">2xx OK</option>
+      <option value="3">3xx Redirect</option>
+      <option value="4">4xx Client Error</option>
+      <option value="5">5xx Server Error</option>
+    </select>
+    {{/* Raw requests are pruned at the retention horizon; earlier times are floored server-side. */}}
+    <label class="search-time">From <input type="datetime-local" name="from" min="{{.Extra.SearchMinDate}}" title="Raw request history is kept for 30 days. Empty means 24 hours ago."></label>
+    <label class="search-time">To <input type="datetime-local" name="to" title="Empty means now."></label>
+    <select name="sort">
+      <option value="">Newest first</option>
+      <option value="slowest" title="Skips long polls such as skycam's /api/demand (LATENCY_EXCLUDE)">Slowest first</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Search</button>
+    <button type="button" class="btn btn-secondary" onclick="exportResults('csv')">Export CSV</button>
+    <button type="button" class="btn btn-secondary" onclick="exportResults('json')">Export JSON</button>
+  </form>
+  <div id="search-results"></div>
+</section>
+
+<script>
+function exportResults(format) {
+  var f = document.getElementById('search-form');
+  var params = new URLSearchParams(new FormData(f));
+  params.set('format', format);
+  window.location.href = '/export/search?' + params.toString();
+}
+</script>
+
 {{/* Hourly Chart */}}
 <section class="panel panel-wide" id="hourly-chart">
   {{template "_hourly_chart" .}}
@@ -39,37 +76,4 @@ document.getElementById('range-select').addEventListener('change', function() {
 <section class="panel panel-wide" id="daily-summary">
   {{template "_daily_summary" .}}
 </section>
-
-{{/* Search */}}
-<section class="panel panel-wide">
-  <h2>Search</h2>
-  <form id="search-form" hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
-    <input type="text" name="host" placeholder="Host">
-    <input type="text" name="ip" placeholder="IP">
-    <input type="text" name="ua" placeholder="User Agent">
-    <select name="status">
-      <option value="">Any Status</option>
-      <option value="2">2xx OK</option>
-      <option value="3">3xx Redirect</option>
-      <option value="4">4xx Client Error</option>
-      <option value="5">5xx Server Error</option>
-    </select>
-    {{/* Raw requests are pruned at 30 days; earlier dates are floored server-side. */}}
-    <input type="date" name="from" min="{{.Extra.SearchMinDate}}" title="Raw request history is kept for 30 days">
-    <input type="date" name="to">
-    <button type="submit" class="btn btn-primary">Search</button>
-    <button type="button" class="btn btn-secondary" onclick="exportResults('csv')">Export CSV</button>
-    <button type="button" class="btn btn-secondary" onclick="exportResults('json')">Export JSON</button>
-  </form>
-  <div id="search-results"></div>
-</section>
-
-<script>
-function exportResults(format) {
-  var f = document.getElementById('search-form');
-  var params = new URLSearchParams(new FormData(f));
-  params.set('format', format);
-  window.location.href = '/export/search?' + params.toString();
-}
-</script>
 {{end}}
