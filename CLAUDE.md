@@ -104,6 +104,7 @@ Discord webhook is the only transport. **If `DISCORD_WEBHOOK_URL` is unset, no a
 ## Important Notes
 
 - The watcher seeks to EOF on startup — it only processes new log lines, not historical data.
+- **Latency stats skip `LATENCY_EXCLUDE` prefixes** (default `/api/demand`, skycam's 25 s long poll). It applies to `HourlyDurations` and the rollup's `avg_duration` only; the requests still count as traffic everywhere else. Days rolled up before the change keep their old average.
 - Bot patterns are pre-seeded in `db/schema.sql` (~22 common bots). They label traffic; they do not block.
 - Maintenance runs at startup and hourly: rollup, then prune (never the other way round, or a day can be deleted from raw before it has been aggregated).
 - The rollup's catch-up scan is a full table scan and only runs on the startup pass; hourly passes recompute today and yesterday only.

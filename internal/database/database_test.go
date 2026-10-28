@@ -414,7 +414,7 @@ func TestRollupMatchesRaw(t *testing.T) {
 	insertRequest(t, q, today, 404, "1.1.1.1")
 	insertRequest(t, q, today, 500, "2.2.2.2")
 
-	if err := Rollup(ctx, q, true); err != nil {
+	if err := Rollup(ctx, q, true, "[]"); err != nil {
 		t.Fatalf("Rollup: %v", err)
 	}
 
@@ -457,7 +457,7 @@ func TestRollupIsIdempotent(t *testing.T) {
 	insertRequest(t, q, today, 200, "1.1.1.1")
 
 	for i := 0; i < 3; i++ {
-		if err := Rollup(ctx, q, true); err != nil {
+		if err := Rollup(ctx, q, true, "[]"); err != nil {
 			t.Fatalf("Rollup %d: %v", i, err)
 		}
 	}
@@ -473,6 +473,71 @@ func TestRollupIsIdempotent(t *testing.T) {
 	}
 }
 
+// TestLatencyExclude checks that long-poll prefixes drop out of both latency
+// views, the hourly durations and the daily average, but still count as traffic.
+func TestLatencyExclude(t *testing.T) {
+	_, q := openTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	add := func(uri string, ms float64) {
+		t.Helper()
+		err := q.InsertRequest(ctx, db.InsertRequestParams{
+			Ts: now, Host: "example.com", ClientIp: "1.1.1.1", Method: "GET", Uri: uri,
+			Status: 200, Size: 100, UserAgent: "test", DurationMs: ms, IsBot: 0,
+			Country: "AU", Referer: "",
+		})
+		if err != nil {
+			t.Fatalf("InsertRequest: %v", err)
+		}
+	}
+	add("/", 10)
+	add("/api/demand?wait=25", 25005)
+	add("/api/demand", 25005)
+	add("/api/demands-elsewhere", 30) // shares the prefix, so excluded too
+	add("/xay", 20)                   // would match prefix /x_ if _ were a wildcard
+
+	durations := func(exclude string) []float64 {
+		t.Helper()
+		rows, err := q.HourlyDurations(ctx, db.HourlyDurationsParams{
+			Since: now.Add(-time.Hour), HostFilter: "", LatencyExclude: exclude,
+		})
+		if err != nil {
+			t.Fatalf("HourlyDurations(%s): %v", exclude, err)
+		}
+		var out []float64
+		for _, r := range rows {
+			out = append(out, r.DurationMs)
+		}
+		return out
+	}
+	if got := durations("[]"); len(got) != 5 {
+		t.Errorf("no exclusions: %d rows, want 5", len(got))
+	}
+	if got := durations(`["/api/demand","/x_"]`); len(got) != 2 || got[0] != 10 || got[1] != 20 {
+		t.Errorf("excluding /api/demand: got %v, want [10 20]", got)
+	}
+
+	if err := Rollup(ctx, q, true, `["/api/demand"]`); err != nil {
+		t.Fatalf("Rollup: %v", err)
+	}
+	rows, err := q.DailySummary(ctx, now.AddDate(0, 0, -1).Format("2006-01-02"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.Day != now.Format("2006-01-02") {
+			continue
+		}
+		if row.Total != 5 {
+			t.Errorf("total = %d, want 5 (excluded requests still count)", row.Total)
+		}
+		if row.AvgDurationMs != 15 {
+			t.Errorf("avg_duration = %v, want 15 (mean of 10 and 20)", row.AvgDurationMs)
+		}
+	}
+}
+
 // TestRollupSurvivesPrune is the whole point of the rollup: aggregate history
 // must remain after the raw rows behind it are deleted.
 func TestRollupSurvivesPrune(t *testing.T) {
@@ -483,7 +548,7 @@ func TestRollupSurvivesPrune(t *testing.T) {
 	insertRequest(t, q, old, 200, "1.1.1.1")
 	insertRequest(t, q, old, 200, "2.2.2.2")
 
-	if err := Rollup(ctx, q, true); err != nil {
+	if err := Rollup(ctx, q, true, "[]"); err != nil {
 		t.Fatalf("Rollup: %v", err)
 	}
 	r := Retention{Requests: 30, UptimeChecks: 14, AppLogError: 90, AppLogNoise: 14, Anomalies: 90, AlertLog: 180}

@@ -160,6 +160,7 @@ All configuration via environment variables (or `.env` file):
 | `GEOIP_DB_PATH` | `/var/lib/GeoIP/GeoLite2-City.mmdb` | MaxMind GeoLite2-City database |
 | `IGNORE_HOSTS` | — | Comma-separated hosts to skip |
 | `IGNORE_USER_AGENTS` | — | Extra UA substrings to skip. Monitor's own probes are always skipped; never add `Go-http-client` |
+| `LATENCY_EXCLUDE` | `/api/demand` | Comma-separated URI prefixes left out of the latency chart and the daily average response time, for long polls that are slow by design. Set it empty to exclude nothing |
 
 ## Alerting
 

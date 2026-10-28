@@ -106,7 +106,7 @@ func main() {
 	maintain := func() {
 		// Roll up before pruning, always — otherwise a day can be deleted from
 		// raw before it has been aggregated.
-		if err := database.Rollup(ctx, q, firstPass); err != nil {
+		if err := database.Rollup(ctx, q, firstPass, cfg.LatencyExcludeJSON()); err != nil {
 			slog.Error("rollup", "err", err)
 		}
 		firstPass = false

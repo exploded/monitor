@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -34,6 +35,23 @@ type Config struct {
 	GeoIPDBPath              string
 	IgnoreHosts              []string
 	IgnoreUserAgents         []string
+	LatencyExclude           []string // URI prefixes left out of latency stats
+}
+
+// defaultLatencyExclude is skycam's long poll: the observatory Pi asks the relay
+// about 140 times an hour, and each request is held open for 25 s by design.
+// At this box's traffic that pinned p95 and p99 to 25 s.
+const defaultLatencyExclude = "/api/demand"
+
+// LatencyExcludeJSON returns LatencyExclude as the JSON array the latency
+// queries read with json_each. Never "null", which json_each would treat as one
+// NULL prefix.
+func (c Config) LatencyExcludeJSON() string {
+	if len(c.LatencyExclude) == 0 {
+		return "[]"
+	}
+	b, _ := json.Marshal(c.LatencyExclude)
+	return string(b)
 }
 
 func Load() Config {
@@ -65,7 +83,17 @@ func Load() Config {
 		GeoIPDBPath:      envOr("GEOIP_DB_PATH", "/var/lib/GeoIP/GeoLite2-City.mmdb"),
 		IgnoreHosts:      parseList(os.Getenv("IGNORE_HOSTS")),
 		IgnoreUserAgents: parseList(os.Getenv("IGNORE_USER_AGENTS")),
+		LatencyExclude:   parseList(envSetOr("LATENCY_EXCLUDE", defaultLatencyExclude)),
 	}
+}
+
+// envSetOr is envOr, except that a variable set to an empty value is honoured
+// rather than replaced by the fallback, so LATENCY_EXCLUDE= turns it off.
+func envSetOr(key, fallback string) string {
+	if v, ok := os.LookupEnv(key); ok {
+		return v
+	}
+	return fallback
 }
 
 // envDays reads a positive day count, falling back on empty, unparseable or

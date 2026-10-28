@@ -22,6 +22,8 @@ ORDER BY day DESC;
 -- Recomputes one day from raw. Called for today and yesterday on each rollup
 -- tick (yesterday so the final late-arriving rows are folded in), and for every
 -- uncovered day during backfill. UPSERT so re-running is idempotent.
+-- avg_duration leaves out latency_exclude prefixes, as HourlyDurations does;
+-- AVG skips the NULLs.
 -- name: RollupDailyStats :exec
 INSERT INTO daily_stats (day, total, bots, unique_ips, errors, avg_duration, bytes)
 SELECT
@@ -30,7 +32,10 @@ SELECT
     SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END),
     COUNT(DISTINCT client_ip),
     SUM(CASE WHEN status >= 400 THEN 1 ELSE 0 END),
-    COALESCE(ROUND(AVG(duration_ms), 1), 0),
+    COALESCE(ROUND(AVG(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
+        WHERE substr(requests.uri, 1, length(x.value)) = x.value)
+      THEN duration_ms END), 1), 0),
     COALESCE(SUM(size), 0)
 FROM requests
 -- Half-open range rather than date(ts) = ?. Wrapping the column in a function
@@ -77,10 +82,17 @@ SELECT country, COUNT(*) AS cnt
 FROM requests WHERE ts >= ? AND country != ''
 GROUP BY country ORDER BY cnt DESC LIMIT ?;
 
+-- latency_exclude is a JSON array of URI prefixes (LATENCY_EXCLUDE). Long polls
+-- such as skycam's /api/demand hold every request open for a fixed time, so at
+-- low traffic they pin p95 and p99 to their timeout. substr rather than LIKE so
+-- a prefix containing _ or % matches literally.
 -- name: HourlyDurations :many
 SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, duration_ms
 FROM requests
 WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
+  AND NOT EXISTS (
+    SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
+    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
 ORDER BY hour, duration_ms;
 
 -- name: MinutelyRequestCountsByHost :many

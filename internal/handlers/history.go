@@ -142,8 +142,9 @@ func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
 
 	// Latency percentiles for initial page load
 	durRows, _ := h.q.HourlyDurations(ctx, db.HourlyDurationsParams{
-		Since:      since,
-		HostFilter: "",
+		Since:          since,
+		HostFilter:     "",
+		LatencyExclude: h.cfg.LatencyExcludeJSON(),
 	})
 
 	latencyPoints, maxLatency, chartWidth := computeLatencyPoints(durRows)
@@ -256,8 +257,9 @@ func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
 	since, rng := parseRange(r)
 
 	rows, _ := h.q.HourlyDurations(ctx, db.HourlyDurationsParams{
-		Since:      since,
-		HostFilter: host,
+		Since:          since,
+		HostFilter:     host,
+		LatencyExclude: h.cfg.LatencyExcludeJSON(),
 	})
 
 	points, maxVal, chartWidth := computeLatencyPoints(rows)

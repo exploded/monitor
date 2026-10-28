@@ -32,7 +32,10 @@ const rollupRetentionDays = 400
 // at seconds on a month of traffic. It is only needed after the process has
 // missed a day, which means a restart, so it runs once at startup and the
 // hourly passes recompute today and yesterday alone.
-func Rollup(ctx context.Context, q *db.Queries, backfill bool) error {
+//
+// latencyExclude is the JSON array from config.LatencyExcludeJSON. Matching
+// requests still count everywhere except avg_duration.
+func Rollup(ctx context.Context, q *db.Queries, backfill bool, latencyExclude string) error {
 	today := time.Now().UTC().Format("2006-01-02")
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 
@@ -55,7 +58,7 @@ func Rollup(ctx context.Context, q *db.Queries, backfill bool) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := q.RollupDailyStats(ctx, day); err != nil {
+		if err := q.RollupDailyStats(ctx, db.RollupDailyStatsParams{Day: day, LatencyExclude: latencyExclude}); err != nil {
 			slog.Error("rollup daily_stats", "day", day, "err", err)
 			if firstErr == nil {
 				firstErr = err
