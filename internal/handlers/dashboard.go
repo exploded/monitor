@@ -27,7 +27,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // TrafficOverview renders the traffic stats panel (polled by HTMX every 60s).
-// It reads the snapshot the background refresher keeps, so it does no queries.
+// It reads the cached snapshot; a stale one is rebuilt behind the response.
 func (h *Handler) TrafficOverview(w http.ResponseWriter, r *http.Request) {
 	snap, err := h.traffic.Get(r.Context())
 	if err != nil {

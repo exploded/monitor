@@ -73,14 +73,14 @@ func main() {
 	// Alert engine
 	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
 
-	// Dashboard traffic summary, refreshed in the background (see Run below).
-	trafficCache := traffic.NewCache(q)
-
-	h := handlers.New(sqlDB, q, pages, matcher, alertEngine, &cfg, trafficCache)
-
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Dashboard traffic summary, rebuilt only while someone is looking at it.
+	trafficCache := traffic.NewCache(ctx, q)
+
+	h := handlers.New(sqlDB, q, pages, matcher, alertEngine, &cfg, trafficCache)
 
 	// Start log watcher (if log path configured)
 	if cfg.LogPath != "" {
@@ -144,9 +144,6 @@ func main() {
 	uptimeMonitor := uptime.New(q, alertEngine)
 	go uptimeMonitor.Run(ctx)
 	slog.Info("uptime monitor started")
-
-	// Start traffic summary refresher. One minute matches the dashboard's poll.
-	go trafficCache.Run(ctx, time.Minute)
 
 	// Start anomaly detector
 	anomalyDetector := anomaly.New(q, alertEngine)

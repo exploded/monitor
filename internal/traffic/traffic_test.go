@@ -1,12 +1,15 @@
 package traffic
 
 import (
+	"context"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/database"
 )
 
 func TestSummarise(t *testing.T) {
@@ -87,5 +90,59 @@ func TestSummariseEmpty(t *testing.T) {
 	s := Summarise(nil, time.Now())
 	if s.Total != 0 || len(s.TopIPs) != 0 || len(s.Sparklines) != 0 {
 		t.Errorf("empty input gave %+v", s)
+	}
+}
+
+// TestCacheRebuildsOnDemand walks a snapshot through its three ages: fresh is
+// served as is, stale is served while a rebuild runs, and very stale waits for
+// the rebuild.
+func TestCacheRebuildsOnDemand(t *testing.T) {
+	d, err := database.Open(filepath.Join(t.TempDir(), "test.db"), filepath.Join("..", "..", "db", "schema.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { d.Close() })
+	q := db.New(d)
+	ctx := context.Background()
+	insert := func() {
+		t.Helper()
+		if err := q.InsertRequest(ctx, db.InsertRequestParams{Ts: time.Now().UTC(), Host: "a.example", ClientIp: "1.1.1.1", Method: "GET", Uri: "/", Status: 200}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := NewCache(ctx, q)
+	age := func(d time.Duration) {
+		s := *c.snap.Load()
+		s.AsOf = time.Now().Add(-d)
+		c.snap.Store(&s)
+	}
+
+	insert()
+	s, err := c.Get(ctx)
+	if err != nil || s.Total != 1 {
+		t.Fatalf("first Get: total %d, err %v; want 1 built inline", s.Total, err)
+	}
+
+	insert()
+	if s, _ := c.Get(ctx); s.Total != 1 {
+		t.Errorf("fresh: total %d, want the cached 1", s.Total)
+	}
+
+	age(2 * time.Minute)
+	if s, _ := c.Get(ctx); s.Total != 1 {
+		t.Errorf("stale: total %d, want the cached 1 served without waiting", s.Total)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for c.snap.Load().Total != 2 {
+		if time.Now().After(deadline) {
+			t.Fatal("stale snapshot was not rebuilt in the background")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	insert()
+	age(10 * time.Minute)
+	if s, _ := c.Get(ctx); s.Total != 3 {
+		t.Errorf("very stale: total %d, want 3 rebuilt before replying", s.Total)
 	}
 }

@@ -2,8 +2,8 @@
 //
 // The panel used to run ten aggregate queries on every HTMX poll, about 4s in
 // all on production, holding the single SQLite connection the whole time. It
-// now reads the window's rows once, aggregates them in Go, and does that on a
-// background ticker so a page load or poll only reads the latest result.
+// now reads the window's rows once and aggregates them in Go. A Cache keeps the
+// result and rebuilds it behind the poll, and only while someone is polling.
 package traffic
 
 import (
@@ -231,53 +231,65 @@ func topN[K cmp.Ordered](m map[K]int64, n int) []K {
 	return keys
 }
 
-// Cache holds the latest Snapshot and refreshes it in the background.
+// How old a snapshot may get. Up to freshFor it is served as is; up to staleFor
+// it is served while a rebuild runs in the background; beyond that (the first
+// visit after a quiet spell) the request waits for a rebuild rather than show
+// numbers that old.
+const (
+	freshFor = time.Minute
+	staleFor = 5 * time.Minute
+)
+
+// Cache holds the latest Snapshot and rebuilds it only when someone asks for
+// it, so the scan costs nothing while no dashboard is open.
 type Cache struct {
-	q    *db.Queries
-	mu   sync.Mutex // serialises refreshes
-	snap atomic.Pointer[Snapshot]
+	q          *db.Queries
+	bg         context.Context // for background rebuilds; ends at shutdown
+	mu         sync.Mutex      // serialises rebuilds
+	refreshing atomic.Bool     // one background rebuild at a time
+	snap       atomic.Pointer[Snapshot]
 }
 
-func NewCache(q *db.Queries) *Cache {
-	return &Cache{q: q}
+func NewCache(ctx context.Context, q *db.Queries) *Cache {
+	return &Cache{q: q, bg: ctx}
 }
 
-// Run refreshes the snapshot now and then every interval until ctx ends.
-func (c *Cache) Run(ctx context.Context, interval time.Duration) {
-	c.refresh(ctx)
-
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			c.refresh(ctx)
-		}
-	}
-}
-
-// Get returns the latest snapshot. Until the first background pass lands it
-// computes one inline, so a request at startup is slow once rather than empty.
+// Get returns a snapshot no older than staleFor, starting a background rebuild
+// when the one it returns is past freshFor.
 func (c *Cache) Get(ctx context.Context) (*Snapshot, error) {
 	if s := c.snap.Load(); s != nil {
-		return s, nil
+		switch age := time.Since(s.AsOf); {
+		case age < freshFor:
+			return s, nil
+		case age < staleFor:
+			c.refreshInBackground()
+			return s, nil
+		}
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if s := c.snap.Load(); s != nil {
+	// Another request may have rebuilt it while this one waited for the lock.
+	if s := c.snap.Load(); s != nil && time.Since(s.AsOf) < freshFor {
 		return s, nil
 	}
 	return c.compute(ctx)
 }
 
-func (c *Cache) refresh(ctx context.Context) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if _, err := c.compute(ctx); err != nil && ctx.Err() == nil {
-		slog.Error("traffic snapshot", "err", err)
+func (c *Cache) refreshInBackground() {
+	if !c.refreshing.CompareAndSwap(false, true) {
+		return
 	}
+	go func() {
+		defer c.refreshing.Store(false)
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if s := c.snap.Load(); s != nil && time.Since(s.AsOf) < freshFor {
+			return
+		}
+		if _, err := c.compute(c.bg); err != nil && c.bg.Err() == nil {
+			slog.Error("traffic snapshot", "err", err)
+		}
+	}()
 }
 
 func (c *Cache) compute(ctx context.Context) (*Snapshot, error) {

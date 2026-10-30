@@ -2,9 +2,9 @@
 <h1>Dashboard</h1>
 
 <div class="dashboard-grid">
-  {{/* Traffic Overview — polls every 60s, matching the background refresh in
-       internal/traffic. A poll only reads the cached snapshot, so it costs no
-       queries; polling faster would just re-send the same numbers. */}}
+  {{/* Traffic Overview — polls every 60s, matching how long internal/traffic
+       keeps a snapshot before rebuilding it. A poll reads the cached snapshot,
+       so polling faster would just re-send the same numbers. */}}
   <section class="panel panel-wide" id="traffic-overview"
     hx-get="/partials/traffic" hx-trigger="every 60s" hx-swap="innerHTML">
     {{template "_traffic_overview" .}}
