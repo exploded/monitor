@@ -15,11 +15,6 @@ SELECT COUNT(DISTINCT client_ip) FROM requests WHERE ts >= ?;
 SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
 FROM requests WHERE ts >= ? ORDER BY id DESC LIMIT ?;
 
--- name: TopReferrersSince :many
-SELECT referer, COUNT(*) AS cnt
-FROM requests WHERE ts >= ? AND referer != ''
-GROUP BY referer ORDER BY cnt DESC LIMIT ?;
-
 -- name: ReferrersByHost :many
 SELECT referer, COUNT(*) AS cnt
 FROM requests
@@ -36,28 +31,16 @@ WHERE ts >= sqlc.arg(since)
   AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
 ORDER BY id DESC LIMIT sqlc.arg(lim);
 
+-- The dashboard's traffic panel aggregates these rows in Go (internal/traffic).
+-- It replaced eight GROUP BY queries: the three grouped by client_ip let the
+-- planner walk idx_requests_client_ip across the whole table to get grouping
+-- order, about 0.8s each, where this range scan on idx_requests_ts is 0.1s.
+-- name: TrafficRowsSince :many
+SELECT ts, host, client_ip, status, user_agent, is_bot, country, referer
+FROM requests WHERE ts >= ?;
+
 -- name: DistinctHosts :many
 SELECT DISTINCT host FROM requests WHERE ts >= ? ORDER BY host;
-
--- name: TopIPsSince :many
-SELECT client_ip, COUNT(*) AS cnt
-FROM requests WHERE ts >= ?
-GROUP BY client_ip ORDER BY cnt DESC LIMIT ?;
-
--- name: TopUserAgentsSince :many
-SELECT user_agent, COUNT(*) AS cnt, MAX(is_bot) AS is_bot
-FROM requests WHERE ts >= ?
-GROUP BY user_agent ORDER BY cnt DESC LIMIT ?;
-
--- name: RequestsByHostSince :many
-SELECT host, COUNT(*) AS cnt
-FROM requests WHERE ts >= ?
-GROUP BY host ORDER BY cnt DESC;
-
--- name: StatusCodesSince :many
-SELECT status, COUNT(*) AS cnt
-FROM requests WHERE ts >= ?
-GROUP BY status ORDER BY status;
 
 -- Batched so the prune never holds one long write transaction against a live
 -- database. The pool is capped at a single connection, so an unbounded DELETE

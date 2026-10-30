@@ -77,11 +77,6 @@ WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
 ORDER BY id DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
--- name: TopCountriesSince :many
-SELECT country, COUNT(*) AS cnt
-FROM requests WHERE ts >= ? AND country != ''
-GROUP BY country ORDER BY cnt DESC LIMIT ?;
-
 -- latency_exclude is a JSON array of URI prefixes (LATENCY_EXCLUDE). Long polls
 -- such as skycam's /api/demand hold every request open for a fixed time, so at
 -- low traffic they pin p95 and p99 to their timeout. substr rather than LIKE so
@@ -95,33 +90,11 @@ WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(h
     WHERE substr(requests.uri, 1, length(x.value)) = x.value)
 ORDER BY hour, duration_ms;
 
--- name: MinutelyRequestCountsByHost :many
-SELECT host, strftime('%Y-%m-%d %H:%M', ts) AS minute, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?
-GROUP BY host, minute
-ORDER BY host, minute;
-
 -- name: HourlyBandwidth :many
 SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, SUM(size) AS total_bytes, COUNT(*) AS cnt
 FROM requests
 WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
 GROUP BY hour ORDER BY hour;
-
--- name: IPReputationData :many
-SELECT
-    client_ip,
-    COUNT(*) AS total,
-    SUM(CASE WHEN status >= 400 AND status < 500 THEN 1 ELSE 0 END) AS count_4xx,
-    SUM(CASE WHEN is_bot = 1 THEN 1 ELSE 0 END) AS bot_count,
-    MIN(ts) AS first_seen,
-    MAX(ts) AS last_seen
-FROM requests
-WHERE ts >= ?
-GROUP BY client_ip
-HAVING total >= 3
-ORDER BY total DESC
-LIMIT ?;
 
 -- name: SearchRequestsExport :many
 SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer

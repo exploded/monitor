@@ -17,6 +17,7 @@ import (
 	"github.com/exploded/monitor/internal/database"
 	"github.com/exploded/monitor/internal/geoip"
 	"github.com/exploded/monitor/internal/handlers"
+	"github.com/exploded/monitor/internal/traffic"
 	"github.com/exploded/monitor/internal/uptime"
 	"github.com/exploded/monitor/internal/watcher"
 )
@@ -72,7 +73,10 @@ func main() {
 	// Alert engine
 	alertEngine := alerts.New(q, cfg.DiscordWebhookURL)
 
-	h := handlers.New(sqlDB, q, pages, matcher, alertEngine, &cfg)
+	// Dashboard traffic summary, refreshed in the background (see Run below).
+	trafficCache := traffic.NewCache(q)
+
+	h := handlers.New(sqlDB, q, pages, matcher, alertEngine, &cfg, trafficCache)
 
 	// Graceful shutdown context
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -140,6 +144,9 @@ func main() {
 	uptimeMonitor := uptime.New(q, alertEngine)
 	go uptimeMonitor.Run(ctx)
 	slog.Info("uptime monitor started")
+
+	// Start traffic summary refresher. One minute matches the dashboard's poll.
+	go trafficCache.Run(ctx, time.Minute)
 
 	// Start anomaly detector
 	anomalyDetector := anomaly.New(q, alertEngine)

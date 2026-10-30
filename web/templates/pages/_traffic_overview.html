@@ -1,5 +1,5 @@
 {{define "_traffic_overview"}}
-<h2>Traffic Overview <small>(last 24h)</small></h2>
+<h2>Traffic Overview <small>(last 24h, as of {{formatTime .Extra.AsOf}})</small></h2>
 
 <div class="stats-row">
   <div class="stat-card">
@@ -45,8 +45,8 @@
         {{$scores := .Extra.IPScores}}
         {{range .Extra.TopIPs}}
         <tr>
-          <td class="ip-cell" title="{{.ClientIp}}">{{.ClientIp}}</td>
-          <td>{{if index $scores .ClientIp}}{{threatBadge (index $scores .ClientIp)}}{{end}}</td>
+          <td class="ip-cell" title="{{.ClientIP}}">{{.ClientIP}}</td>
+          <td>{{if index $scores .ClientIP}}{{threatBadge (index $scores .ClientIP)}}{{end}}</td>
           <td>{{.Cnt}}</td>
         </tr>
         {{end}}
@@ -62,10 +62,10 @@
       <thead><tr><th>User Agent</th><th>Requests</th><th>Bot</th></tr></thead>
       <tbody>
         {{range .Extra.TopUAs}}
-        <tr{{if eq .IsBot 1}} class="bot-row"{{end}}>
+        <tr{{if .IsBot}} class="bot-row"{{end}}>
           <td class="ua-cell" title="{{.UserAgent}}">{{truncate .UserAgent 50}}</td>
           <td>{{.Cnt}}</td>
-          <td>{{if eq .IsBot 1}}Yes{{else}}—{{end}}</td>
+          <td>{{if .IsBot}}Yes{{else}}—{{end}}</td>
         </tr>
         {{end}}
       </tbody>

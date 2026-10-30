@@ -47,6 +47,7 @@ Pure Go HTTP server (no framework), SQLite (modernc.org/sqlite, pure Go/no CGO),
 - **`internal/uptime`** — HTTP probes of configured targets, with consecutive-failure debounce and recovery events.
 - **`internal/anomaly`** — Rate-spike, new-scanner and 5xx anomaly detection over the request table.
 - **`internal/reputation`** — Threat score (0-100) per IP from 4xx ratio, bot share and request velocity.
+- **`internal/traffic`** — The dashboard's 24h traffic summary. Reads the window's rows in one pass, aggregates in Go, and refreshes every minute in the background; `/` and `/partials/traffic` only read the cached snapshot.
 - **`pkg/logship`** — Reusable slog.Handler that batch-ships logs to monitor's POST /api/logs. Used by other projects to send their logs here.
 - **`db/queries/`** — SQLC query files. **`db/sqlc/`** — Generated Go code (do not edit).
 

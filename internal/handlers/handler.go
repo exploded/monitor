@@ -8,6 +8,7 @@ import (
 	db "github.com/exploded/monitor/db/sqlc"
 	"github.com/exploded/monitor/internal/alerts"
 	"github.com/exploded/monitor/internal/config"
+	"github.com/exploded/monitor/internal/traffic"
 	"github.com/exploded/monitor/internal/watcher"
 )
 
@@ -19,10 +20,11 @@ type Handler struct {
 	matcher     *watcher.BotMatcher
 	alertEngine *alerts.Engine
 	cfg         *config.Config
+	traffic     *traffic.Cache
 }
 
 // New creates a Handler with all dependencies.
-func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.BotMatcher, alertEngine *alerts.Engine, cfg *config.Config) *Handler {
+func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.BotMatcher, alertEngine *alerts.Engine, cfg *config.Config, trafficCache *traffic.Cache) *Handler {
 	return &Handler{
 		q:           q,
 		rawDB:       rawDB,
@@ -30,6 +32,7 @@ func New(rawDB *sql.DB, q *db.Queries, pages PageTemplates, matcher *watcher.Bot
 		matcher:     matcher,
 		alertEngine: alertEngine,
 		cfg:         cfg,
+		traffic:     trafficCache,
 	}
 }
 
