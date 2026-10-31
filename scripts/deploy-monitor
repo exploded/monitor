@@ -36,7 +36,10 @@ rm -f "$DEPLOY_DIR/monitor"
 cp "$DEPLOY_SRC/monitor" "$DEPLOY_DIR/monitor"
 chmod +x "$DEPLOY_DIR/monitor"
 
-echo "[deploy] Updating web assets..."
+echo "[deploy] Replacing web assets..."
+# Replace, don't merge: a template deleted from the repo but left here is still
+# parsed at startup, and one calling a removed template func panics the server.
+rm -rf "$DEPLOY_DIR/web"
 cp -r "$DEPLOY_SRC/web/" "$DEPLOY_DIR/"
 
 echo "[deploy] Updating database schema..."
@@ -53,10 +56,20 @@ chown -R "$SERVICE_USER:$SERVICE_GROUP" "$DEPLOY_DIR"
 echo "[deploy] Starting service..."
 systemctl start monitor
 
-echo "[deploy] Verifying service is active..."
-sleep 2
-if ! systemctl is-active --quiet monitor; then
-    echo "[deploy] ERROR: Service failed to start. Status:"
+echo "[deploy] Waiting for /health..."
+# Migrations run before the server listens, so "active" alone proves nothing:
+# a crash after a long migration still looks active for the first seconds.
+PORT=$(sed -n 's/^PORT=//p' "$DEPLOY_DIR/.env" | tr -d '"'"'"' \r')
+PORT=${PORT:-8989}
+for _ in $(seq 1 120); do
+    if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/health"; then
+        HEALTHY=1
+        break
+    fi
+    sleep 1
+done
+if [ -z "$HEALTHY" ]; then
+    echo "[deploy] ERROR: /health did not answer within 120 s. Status:"
     systemctl status monitor --no-pager --lines=30
     exit 1
 fi
