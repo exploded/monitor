@@ -7,7 +7,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"time"
 )
 
@@ -106,34 +105,57 @@ func (q *Queries) DeleteDailyStatsBefore(ctx context.Context, cutoffDay string) 
 	return err
 }
 
-const hourlyBandwidth = `-- name: HourlyBandwidth :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, SUM(size) AS total_bytes, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?1 AND (?2 = '' OR host = ?2)
-GROUP BY hour ORDER BY hour
+const deleteHourlyStatsBefore = `-- name: DeleteHourlyStatsBefore :exec
+DELETE FROM hourly_stats WHERE hour < ?1
 `
 
-type HourlyBandwidthParams struct {
-	Since      time.Time   `json:"since"`
-	HostFilter interface{} `json:"host_filter"`
+func (q *Queries) DeleteHourlyStatsBefore(ctx context.Context, cutoffHour string) error {
+	_, err := q.db.ExecContext(ctx, deleteHourlyStatsBefore, cutoffHour)
+	return err
 }
 
-type HourlyBandwidthRow struct {
-	Hour       interface{}     `json:"hour"`
-	TotalBytes sql.NullFloat64 `json:"total_bytes"`
-	Cnt        int64           `json:"cnt"`
+const hourRows = `-- name: HourRows :many
+SELECT status, size, duration_ms,
+    CAST(EXISTS (
+        SELECT 1 FROM json_each(CAST(?1 AS TEXT)) AS x
+        WHERE substr(requests.uri, 1, length(x.value)) = x.value) AS INTEGER) AS excluded
+FROM requests
+WHERE ts >= ?2 AND ts < ?3
+`
+
+type HourRowsParams struct {
+	LatencyExclude string    `json:"latency_exclude"`
+	FromTs         time.Time `json:"from_ts"`
+	ToTs           time.Time `json:"to_ts"`
 }
 
-func (q *Queries) HourlyBandwidth(ctx context.Context, arg HourlyBandwidthParams) ([]HourlyBandwidthRow, error) {
-	rows, err := q.db.QueryContext(ctx, hourlyBandwidth, arg.Since, arg.HostFilter)
+type HourRowsRow struct {
+	Status     int64   `json:"status"`
+	Size       int64   `json:"size"`
+	DurationMs float64 `json:"duration_ms"`
+	Excluded   int64   `json:"excluded"`
+}
+
+// Raw rows for one hour of hourly_stats. excluded marks LATENCY_EXCLUDE
+// prefixes (see config.LatencyExcludeJSON): long polls such as skycam's
+// /api/demand hold every request open for a fixed time, so at low traffic they
+// would pin p95 and p99 to their timeout. They still count as traffic. substr
+// rather than LIKE so a prefix containing _ or % matches literally.
+func (q *Queries) HourRows(ctx context.Context, arg HourRowsParams) ([]HourRowsRow, error) {
+	rows, err := q.db.QueryContext(ctx, hourRows, arg.LatencyExclude, arg.FromTs, arg.ToTs)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []HourlyBandwidthRow
+	var items []HourRowsRow
 	for rows.Next() {
-		var i HourlyBandwidthRow
-		if err := rows.Scan(&i.Hour, &i.TotalBytes, &i.Cnt); err != nil {
+		var i HourRowsRow
+		if err := rows.Scan(
+			&i.Status,
+			&i.Size,
+			&i.DurationMs,
+			&i.Excluded,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -147,116 +169,32 @@ func (q *Queries) HourlyBandwidth(ctx context.Context, arg HourlyBandwidthParams
 	return items, nil
 }
 
-const hourlyDurations = `-- name: HourlyDurations :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, duration_ms
-FROM requests
-WHERE ts >= ?1 AND (?2 = '' OR host = ?2)
-  AND NOT EXISTS (
-    SELECT 1 FROM json_each(CAST(?3 AS TEXT)) AS x
-    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
-ORDER BY hour, duration_ms
+const hourlyStatsSince = `-- name: HourlyStatsSince :many
+SELECT hour, total, errors_5xx, bytes, lat_count, p50, p95, p99
+FROM hourly_stats
+WHERE hour >= ?1
+ORDER BY hour
 `
 
-type HourlyDurationsParams struct {
-	Since          time.Time   `json:"since"`
-	HostFilter     interface{} `json:"host_filter"`
-	LatencyExclude string      `json:"latency_exclude"`
-}
-
-type HourlyDurationsRow struct {
-	Hour       interface{} `json:"hour"`
-	DurationMs float64     `json:"duration_ms"`
-}
-
-// latency_exclude is a JSON array of URI prefixes (LATENCY_EXCLUDE). Long polls
-// such as skycam's /api/demand hold every request open for a fixed time, so at
-// low traffic they pin p95 and p99 to their timeout. substr rather than LIKE so
-// a prefix containing _ or % matches literally.
-func (q *Queries) HourlyDurations(ctx context.Context, arg HourlyDurationsParams) ([]HourlyDurationsRow, error) {
-	rows, err := q.db.QueryContext(ctx, hourlyDurations, arg.Since, arg.HostFilter, arg.LatencyExclude)
+func (q *Queries) HourlyStatsSince(ctx context.Context, fromHour string) ([]HourlyStat, error) {
+	rows, err := q.db.QueryContext(ctx, hourlyStatsSince, fromHour)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []HourlyDurationsRow
+	var items []HourlyStat
 	for rows.Next() {
-		var i HourlyDurationsRow
-		if err := rows.Scan(&i.Hour, &i.DurationMs); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const hourlyRequestCounts = `-- name: HourlyRequestCounts :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?
-GROUP BY hour ORDER BY hour
-`
-
-type HourlyRequestCountsRow struct {
-	Hour interface{} `json:"hour"`
-	Cnt  int64       `json:"cnt"`
-}
-
-func (q *Queries) HourlyRequestCounts(ctx context.Context, ts time.Time) ([]HourlyRequestCountsRow, error) {
-	rows, err := q.db.QueryContext(ctx, hourlyRequestCounts, ts)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []HourlyRequestCountsRow
-	for rows.Next() {
-		var i HourlyRequestCountsRow
-		if err := rows.Scan(&i.Hour, &i.Cnt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const hourlyRequestCountsByHost = `-- name: HourlyRequestCountsByHost :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?1 AND (?2 = '' OR host = ?2)
-GROUP BY hour ORDER BY hour
-`
-
-type HourlyRequestCountsByHostParams struct {
-	Since      time.Time   `json:"since"`
-	HostFilter interface{} `json:"host_filter"`
-}
-
-type HourlyRequestCountsByHostRow struct {
-	Hour interface{} `json:"hour"`
-	Cnt  int64       `json:"cnt"`
-}
-
-func (q *Queries) HourlyRequestCountsByHost(ctx context.Context, arg HourlyRequestCountsByHostParams) ([]HourlyRequestCountsByHostRow, error) {
-	rows, err := q.db.QueryContext(ctx, hourlyRequestCountsByHost, arg.Since, arg.HostFilter)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []HourlyRequestCountsByHostRow
-	for rows.Next() {
-		var i HourlyRequestCountsByHostRow
-		if err := rows.Scan(&i.Hour, &i.Cnt); err != nil {
+		var i HourlyStat
+		if err := rows.Scan(
+			&i.Hour,
+			&i.Total,
+			&i.Errors5xx,
+			&i.Bytes,
+			&i.LatCount,
+			&i.P50,
+			&i.P95,
+			&i.P99,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -300,7 +238,7 @@ type RollupDailyStatsParams struct {
 // Recomputes one day from raw. Called for today and yesterday on each rollup
 // tick (yesterday so the final late-arriving rows are folded in), and for every
 // uncovered day during backfill. UPSERT so re-running is idempotent.
-// avg_duration leaves out latency_exclude prefixes, as HourlyDurations does;
+// avg_duration leaves out latency_exclude prefixes, as HourRows does;
 // AVG skips the NULLs.
 // Half-open range rather than date(ts) = ?. Wrapping the column in a function
 // makes the predicate non-sargable, so idx_requests_ts is unusable and every
@@ -313,7 +251,7 @@ func (q *Queries) RollupDailyStats(ctx context.Context, arg RollupDailyStatsPara
 }
 
 const searchRequests = `-- name: SearchRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -322,7 +260,7 @@ WHERE (?1 = '' OR host = ?1)
        OR (?3 >= 10 AND status = ?3))
   AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
   AND ts >= ?5 AND ts <= ?6
-ORDER BY id DESC
+ORDER BY ts DESC, id DESC
 LIMIT ?8 OFFSET ?7
 `
 
@@ -349,9 +287,12 @@ type SearchRequestsRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
-	Referer    string    `json:"referer"`
 }
 
+// Ordered by ts, not id, so idx_requests_ts serves both the range and the
+// order and the scan stops at the limit. ORDER BY id DESC made the planner
+// sort the whole range in a temp B-tree first. The id tiebreak matches the
+// index, whose entries are (ts, rowid).
 func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) ([]SearchRequestsRow, error) {
 	rows, err := q.db.QueryContext(ctx, searchRequests,
 		arg.HostFilter,
@@ -382,7 +323,6 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
-			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -398,7 +338,7 @@ func (q *Queries) SearchRequests(ctx context.Context, arg SearchRequestsParams) 
 }
 
 const searchRequestsExport = `-- name: SearchRequestsExport :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -407,7 +347,7 @@ WHERE (?1 = '' OR host = ?1)
        OR (?3 >= 10 AND status = ?3))
   AND (?4 = '' OR user_agent LIKE '%' || ?4 || '%')
   AND ts >= ?5 AND ts <= ?6
-ORDER BY id DESC
+ORDER BY ts DESC, id DESC
 LIMIT 10000
 `
 
@@ -432,7 +372,6 @@ type SearchRequestsExportRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
-	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsExportParams) ([]SearchRequestsExportRow, error) {
@@ -463,7 +402,6 @@ func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsEx
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
-			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -479,7 +417,7 @@ func (q *Queries) SearchRequestsExport(ctx context.Context, arg SearchRequestsEx
 }
 
 const searchRequestsExportSlowest = `-- name: SearchRequestsExportSlowest :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -517,7 +455,6 @@ type SearchRequestsExportSlowestRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
-	Referer    string    `json:"referer"`
 }
 
 // SearchRequestsExport, slowest first. See SearchRequestsSlowest.
@@ -550,7 +487,6 @@ func (q *Queries) SearchRequestsExportSlowest(ctx context.Context, arg SearchReq
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
-			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -566,7 +502,7 @@ func (q *Queries) SearchRequestsExportSlowest(ctx context.Context, arg SearchReq
 }
 
 const searchRequestsSlowest = `-- name: SearchRequestsSlowest :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (?1 = '' OR host = ?1)
   AND (?2 = '' OR client_ip = ?2)
@@ -606,7 +542,6 @@ type SearchRequestsSlowestRow struct {
 	UserAgent  string    `json:"user_agent"`
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
-	Referer    string    `json:"referer"`
 }
 
 // SearchRequests, slowest first. A separate query because sqlc's SQLite engine
@@ -645,7 +580,6 @@ func (q *Queries) SearchRequestsSlowest(ctx context.Context, arg SearchRequestsS
 			&i.UserAgent,
 			&i.DurationMs,
 			&i.IsBot,
-			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
@@ -658,4 +592,37 @@ func (q *Queries) SearchRequestsSlowest(ctx context.Context, arg SearchRequestsS
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertHourlyStats = `-- name: UpsertHourlyStats :exec
+INSERT INTO hourly_stats (hour, total, errors_5xx, bytes, lat_count, p50, p95, p99)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(hour) DO UPDATE SET
+    total = excluded.total, errors_5xx = excluded.errors_5xx, bytes = excluded.bytes,
+    lat_count = excluded.lat_count, p50 = excluded.p50, p95 = excluded.p95, p99 = excluded.p99
+`
+
+type UpsertHourlyStatsParams struct {
+	Hour      string  `json:"hour"`
+	Total     int64   `json:"total"`
+	Errors5xx int64   `json:"errors_5xx"`
+	Bytes     int64   `json:"bytes"`
+	LatCount  int64   `json:"lat_count"`
+	P50       float64 `json:"p50"`
+	P95       float64 `json:"p95"`
+	P99       float64 `json:"p99"`
+}
+
+func (q *Queries) UpsertHourlyStats(ctx context.Context, arg UpsertHourlyStatsParams) error {
+	_, err := q.db.ExecContext(ctx, upsertHourlyStats,
+		arg.Hour,
+		arg.Total,
+		arg.Errors5xx,
+		arg.Bytes,
+		arg.LatCount,
+		arg.P50,
+		arg.P95,
+		arg.P99,
+	)
+	return err
 }

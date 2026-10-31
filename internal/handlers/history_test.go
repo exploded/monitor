@@ -42,12 +42,12 @@ func TestLatencyAxis(t *testing.T) {
 }
 
 func TestComputeLatencyPoints(t *testing.T) {
-	var rows []db.HourlyDurationsRow
-	for i := 0; i < 50; i++ { // with 51 values, p99 is the largest
-		rows = append(rows, db.HourlyDurationsRow{Hour: "2026-10-25 04:00", DurationMs: 2})
+	series := []db.HourlyStat{
+		{Hour: "2026-10-25 04:00", Total: 51, LatCount: 51, P50: 2, P95: 2, P99: 3693},
+		// Nothing but long polls: no percentiles, so no point.
+		{Hour: "2026-10-25 05:00", Total: 140, LatCount: 0},
 	}
-	rows = append(rows, db.HourlyDurationsRow{Hour: "2026-10-25 04:00", DurationMs: 3693})
-	points, ticks, _ := computeLatencyPoints(rows)
+	points, ticks, _ := computeLatencyPoints(series)
 	if len(points) != 1 {
 		t.Fatalf("got %d points, want 1", len(points))
 	}

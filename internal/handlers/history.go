@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
+	"github.com/exploded/monitor/internal/database"
 )
 
 // utcHourToLocal converts a UTC hour string like "2024-03-27 14:00" to Melbourne local time.
@@ -153,206 +153,88 @@ func labelStep(n int) int {
 	}
 }
 
+// ChartBar is one bar of the hourly requests or bandwidth chart.
+type ChartBar struct {
+	Hour   string
+	Count  int64
+	Height int
+}
+
+// barHeights scales values into bars up to 180 units tall, with any non-zero
+// value at least 2 so it stays visible.
+func barHeights(values []int64) []int {
+	var maxV int64
+	for _, v := range values {
+		maxV = max(maxV, v)
+	}
+	heights := make([]int, len(values))
+	for i, v := range values {
+		if maxV > 0 {
+			heights[i] = int(float64(v) / float64(maxV) * 180)
+		}
+		if heights[i] < 2 && v > 0 {
+			heights[i] = 2
+		}
+	}
+	return heights
+}
+
+// historyCharts builds the data for all three History charts from one read of
+// the hourly series. Each used to be its own scan of raw requests.
+func (h *Handler) historyCharts(r *http.Request) map[string]any {
+	since, rng := parseRange(r)
+	series, err := database.HourlySeries(r.Context(), h.q, since, h.cfg.LatencyExcludeJSON())
+	if err != nil {
+		slog.Error("hourly series", "err", err)
+	}
+
+	counts := make([]int64, len(series))
+	bytes := make([]int64, len(series))
+	for i, s := range series {
+		counts[i], bytes[i] = s.Total, s.Bytes
+	}
+	countH, bytesH := barHeights(counts), barHeights(bytes)
+	bars := make([]ChartBar, len(series))
+	bwBars := make([]BWBar, len(series))
+	for i, s := range series {
+		label := utcHourToLocal(s.Hour)
+		bars[i] = ChartBar{Hour: label, Count: s.Total, Height: countH[i]}
+		bwBars[i] = BWBar{Hour: label, Bytes: s.Bytes, Height: bytesH[i]}
+	}
+
+	latencyPoints, latencyTicks, chartWidth := computeLatencyPoints(series)
+
+	return map[string]any{
+		"Bars":          bars,
+		"BWBars":        bwBars,
+		"LatencyPoints": latencyPoints,
+		"LatencyTicks":  latencyTicks,
+		"ChartWidth":    chartWidth,
+		"Range":         rng,
+		"RangeLabel":    rangeLabels[rng],
+		"LabelStep":     labelStep(len(bars)),
+	}
+}
+
 // History renders the historical views page.
 func (h *Handler) History(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	since, rng := parseRange(r)
+	extra := h.historyCharts(r)
+	extra["Daily"], _ = h.q.DailySummary(r.Context(), dailySummaryFrom())
+	extra["SearchMinDate"] = h.searchMinDate()
 
-	hourly, _ := h.q.HourlyRequestCounts(ctx, since)
-	daily, _ := h.q.DailySummary(ctx, dailySummaryFrom())
-
-	// Pre-calculate chart data
-	type ChartBar struct {
-		Hour   string
-		Count  int64
-		Height int
-	}
-	var maxCount int64
-	for _, row := range hourly {
-		if row.Cnt > maxCount {
-			maxCount = row.Cnt
-		}
-	}
-	bars := make([]ChartBar, len(hourly))
-	for i, row := range hourly {
-		height := 0
-		if maxCount > 0 {
-			height = int(float64(row.Cnt) / float64(maxCount) * 180)
-		}
-		if height < 2 && row.Cnt > 0 {
-			height = 2
-		}
-		label := ""
-		if s, ok := row.Hour.(string); ok {
-			label = utcHourToLocal(s)
-		}
-		bars[i] = ChartBar{Hour: label, Count: row.Cnt, Height: height}
-	}
-
-	// Latency percentiles for initial page load
-	durRows, _ := h.q.HourlyDurations(ctx, db.HourlyDurationsParams{
-		Since:          since,
-		HostFilter:     "",
-		LatencyExclude: h.cfg.LatencyExcludeJSON(),
-	})
-
-	latencyPoints, latencyTicks, chartWidth := computeLatencyPoints(durRows)
-
-	// Bandwidth for initial page load
-	bwRows, _ := h.q.HourlyBandwidth(ctx, db.HourlyBandwidthParams{
-		Since:      since,
-		HostFilter: "",
-	})
-	bwBars := computeBWBars(bwRows)
-
-	step := labelStep(len(bars))
-
-	h.render(w, r, "history", "", PageData{
-		Title: "History",
-		Extra: map[string]any{
-			"Bars":          bars,
-			"Daily":         daily,
-			"LatencyPoints": latencyPoints,
-			"LatencyTicks":  latencyTicks,
-			"ChartWidth":    chartWidth,
-			"BWBars":        bwBars,
-			"Range":         rng,
-			"RangeLabel":    rangeLabels[rng],
-			"LabelStep":     step,
-			"SearchMinDate": h.searchMinDate(),
-		},
-	})
+	h.render(w, r, "history", "", PageData{Title: "History", Extra: extra})
 }
 
-// HourlyChart renders the hourly SVG bar chart partial.
-func (h *Handler) HourlyChart(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	host := r.URL.Query().Get("host")
-	since, rng := parseRange(r)
-
-	var hourly []db.HourlyRequestCountsRow
-	if host != "" {
-		rows, _ := h.q.HourlyRequestCountsByHost(ctx, db.HourlyRequestCountsByHostParams{
-			Since:      since,
-			HostFilter: host,
-		})
-		for _, row := range rows {
-			hourly = append(hourly, db.HourlyRequestCountsRow{Hour: row.Hour, Cnt: row.Cnt})
-		}
-	} else {
-		hourly, _ = h.q.HourlyRequestCounts(ctx, since)
-	}
-
-	type ChartBar struct {
-		Hour   string
-		Count  int64
-		Height int
-	}
-	var maxCount int64
-	for _, row := range hourly {
-		if row.Cnt > maxCount {
-			maxCount = row.Cnt
-		}
-	}
-	bars := make([]ChartBar, len(hourly))
-	for i, row := range hourly {
-		height := 0
-		if maxCount > 0 {
-			height = int(float64(row.Cnt) / float64(maxCount) * 180)
-		}
-		if height < 2 && row.Cnt > 0 {
-			height = 2
-		}
-		label := ""
-		if s, ok := row.Hour.(string); ok {
-			label = utcHourToLocal(s)
-		}
-		bars[i] = ChartBar{Hour: label, Count: row.Cnt, Height: height}
-	}
-
+// HistoryCharts renders the three hourly charts for a new range.
+func (h *Handler) HistoryCharts(w http.ResponseWriter, r *http.Request) {
 	tmpl, ok := h.pages["history"]
 	if !ok {
 		http.Error(w, "template not found", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"Bars": bars, "RangeLabel": rangeLabels[rng], "LabelStep": labelStep(len(bars))}}
-	if err := tmpl.ExecuteTemplate(w, "_hourly_chart", data); err != nil {
-		slog.Error("render hourly chart", "err", err)
-	}
-}
-
-// DailySummary renders the daily summary table partial.
-func (h *Handler) DailySummary(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	daily, _ := h.q.DailySummary(ctx, dailySummaryFrom())
-
-	tmpl, ok := h.pages["history"]
-	if !ok {
-		http.Error(w, "template not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"Daily": daily}}
-	if err := tmpl.ExecuteTemplate(w, "_daily_summary", data); err != nil {
-		slog.Error("render daily summary", "err", err)
-	}
-}
-
-// LatencyChart renders the p50/p95/p99 latency chart partial.
-func (h *Handler) LatencyChart(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	host := r.URL.Query().Get("host")
-	since, rng := parseRange(r)
-
-	rows, _ := h.q.HourlyDurations(ctx, db.HourlyDurationsParams{
-		Since:          since,
-		HostFilter:     host,
-		LatencyExclude: h.cfg.LatencyExcludeJSON(),
-	})
-
-	points, ticks, chartWidth := computeLatencyPoints(rows)
-
-	tmpl, ok := h.pages["history"]
-	if !ok {
-		http.Error(w, "template not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{
-		"LatencyPoints": points,
-		"LatencyTicks":  ticks,
-		"ChartWidth":    chartWidth,
-		"RangeLabel":    rangeLabels[rng],
-		"LabelStep":     labelStep(len(points)),
-	}}
-	if err := tmpl.ExecuteTemplate(w, "_latency_chart", data); err != nil {
-		slog.Error("render latency chart", "err", err)
-	}
-}
-
-// BandwidthChart renders the hourly bandwidth bar chart partial.
-func (h *Handler) BandwidthChart(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	host := r.URL.Query().Get("host")
-	since, rng := parseRange(r)
-
-	rows, _ := h.q.HourlyBandwidth(ctx, db.HourlyBandwidthParams{
-		Since:      since,
-		HostFilter: host,
-	})
-
-	bars := computeBWBars(rows)
-
-	tmpl, ok := h.pages["history"]
-	if !ok {
-		http.Error(w, "template not found", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	data := PageData{Extra: map[string]any{"BWBars": bars, "RangeLabel": rangeLabels[rng], "LabelStep": labelStep(len(bars))}}
-	if err := tmpl.ExecuteTemplate(w, "_bandwidth_chart", data); err != nil {
-		slog.Error("render bandwidth chart", "err", err)
+	if err := tmpl.ExecuteTemplate(w, "_history_charts", PageData{Extra: h.historyCharts(r)}); err != nil {
+		slog.Error("render history charts", "err", err)
 	}
 }
 
@@ -405,46 +287,18 @@ func latencyAxis(maxMs float64) (y func(ms float64) int, ticks []LatencyTick) {
 	return y, ticks
 }
 
-// computeLatencyPoints groups hourly duration rows into percentile points with
-// SVG coordinates on a log axis, and returns the axis gridlines.
-func computeLatencyPoints(rows []db.HourlyDurationsRow) ([]LatencyPoint, []LatencyTick, int) {
+// computeLatencyPoints places each hour's percentiles on a log axis and
+// returns the axis gridlines. Hours whose every request was excluded by
+// LATENCY_EXCLUDE have no percentiles and get no point.
+func computeLatencyPoints(series []db.HourlyStat) ([]LatencyPoint, []LatencyTick, int) {
 	var points []LatencyPoint
-	var curHour string
-	var durations []float64
-
-	flush := func() {
-		if len(durations) == 0 {
-			return
-		}
-		sort.Float64s(durations)
-		n := len(durations)
-		points = append(points, LatencyPoint{
-			P50:  durations[int(math.Floor(float64(n)*0.50))],
-			P95:  durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.95)))],
-			P99:  durations[int(math.Min(float64(n-1), math.Floor(float64(n)*0.99)))],
-			Hour: curHour,
-		})
-	}
-
-	for _, row := range rows {
-		hour := ""
-		if s, ok := row.Hour.(string); ok {
-			hour = utcHourToLocal(s)
-		}
-		if hour != curHour {
-			flush()
-			curHour = hour
-			durations = durations[:0]
-		}
-		durations = append(durations, row.DurationMs)
-	}
-	flush()
-
 	var maxVal float64
-	for _, p := range points {
-		if p.P99 > maxVal {
-			maxVal = p.P99
+	for _, s := range series {
+		if s.LatCount == 0 {
+			continue
 		}
+		points = append(points, LatencyPoint{Hour: utcHourToLocal(s.Hour), P50: s.P50, P95: s.P95, P99: s.P99})
+		maxVal = max(maxVal, s.P99)
 	}
 	y, ticks := latencyAxis(maxVal)
 
@@ -468,40 +322,6 @@ type BWBar struct {
 	Hour   string
 	Bytes  int64
 	Height int
-}
-
-// computeBWBars converts hourly bandwidth rows into bar chart data.
-func computeBWBars(rows []db.HourlyBandwidthRow) []BWBar {
-	var maxBytes int64
-	for _, row := range rows {
-		b := int64(0)
-		if row.TotalBytes.Valid {
-			b = int64(row.TotalBytes.Float64)
-		}
-		if b > maxBytes {
-			maxBytes = b
-		}
-	}
-	bars := make([]BWBar, len(rows))
-	for i, row := range rows {
-		b := int64(0)
-		if row.TotalBytes.Valid {
-			b = int64(row.TotalBytes.Float64)
-		}
-		height := 0
-		if maxBytes > 0 {
-			height = int(float64(b) / float64(maxBytes) * 180)
-		}
-		if height < 2 && b > 0 {
-			height = 2
-		}
-		label := ""
-		if s, ok := row.Hour.(string); ok {
-			label = utcHourToLocal(s)
-		}
-		bars[i] = BWBar{Hour: label, Bytes: b, Height: height}
-	}
-	return bars
 }
 
 // UptimeHourSegment holds data for one hour segment on the uptime timeline.

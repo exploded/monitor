@@ -70,6 +70,17 @@ type DailyStat struct {
 	Bytes       int64   `json:"bytes"`
 }
 
+type HourlyStat struct {
+	Hour      string  `json:"hour"`
+	Total     int64   `json:"total"`
+	Errors5xx int64   `json:"errors_5xx"`
+	Bytes     int64   `json:"bytes"`
+	LatCount  int64   `json:"lat_count"`
+	P50       float64 `json:"p50"`
+	P95       float64 `json:"p95"`
+	P99       float64 `json:"p99"`
+}
+
 type Request struct {
 	ID         int64     `json:"id"`
 	Ts         time.Time `json:"ts"`
@@ -83,7 +94,6 @@ type Request struct {
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
 	Country    string    `json:"country"`
-	Referer    string    `json:"referer"`
 }
 
 type SchemaMigration struct {

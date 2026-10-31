@@ -68,9 +68,10 @@ func Open(path, schemaPath string) (*sql.DB, error) {
 	}
 
 	// Additive column migrations: cheap, idempotent, safe to attempt every boot.
+	// requests.referer was added here too; it must not come back, or it would
+	// re-add the column the drop-requests-referer migration removes.
 	for _, m := range []string{
 		"ALTER TABLE requests ADD COLUMN country TEXT NOT NULL DEFAULT ''",
-		"ALTER TABLE requests ADD COLUMN referer TEXT NOT NULL DEFAULT ''",
 	} {
 		if _, err := d.Exec(m); err != nil && !isDuplicateColumn(err) {
 			d.Close()
@@ -138,6 +139,16 @@ var onceMigrations = []onceMigration{
 	// still recorded for the Security page. Once-only, so re-enabling from the
 	// UI sticks across restarts.
 	{"disable-scanner-alerts", "UPDATE alert_rules SET enabled = 0 WHERE type IN ('rate_spike', 'new_scanner')"},
+	// Referrers told us nothing useful and the page was slow; the column was the
+	// widest optional text on the largest table. Rewrites requests once, before
+	// the server listens.
+	{"drop-requests-referer", "ALTER TABLE requests DROP COLUMN referer"},
+	// The rate_spike and new_scanner detectors are gone: they picked IPs to
+	// block, and blocking is Cloudflare's. alert_log rows go before their rule
+	// (rule_id is a NOT NULL foreign key).
+	{"delete-scanner-alert-log", "DELETE FROM alert_log WHERE rule_id IN (SELECT id FROM alert_rules WHERE type IN ('rate_spike', 'new_scanner'))"},
+	{"delete-scanner-alert-rules", "DELETE FROM alert_rules WHERE type IN ('rate_spike', 'new_scanner')"},
+	{"delete-scanner-anomalies", "DELETE FROM anomalies WHERE type IN ('rate_spike', 'new_scanner')"},
 }
 
 // runOnce applies any onceMigration not yet recorded in schema_migrations.

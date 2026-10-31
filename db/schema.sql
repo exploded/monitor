@@ -10,8 +10,7 @@ CREATE TABLE IF NOT EXISTS requests (
     user_agent  TEXT NOT NULL,
     duration_ms REAL NOT NULL,
     is_bot      INTEGER NOT NULL DEFAULT 0,
-    country     TEXT NOT NULL DEFAULT '',
-    referer     TEXT NOT NULL DEFAULT ''
+    country     TEXT NOT NULL DEFAULT ''
 );
 
 -- Deliberately only three indexes. Dropped previously:
@@ -98,23 +97,15 @@ CREATE TABLE IF NOT EXISTS alert_log (
 );
 CREATE INDEX IF NOT EXISTS idx_alert_log_created ON alert_log(created_at);
 
--- The last three match the types the anomaly detector emits. Without them,
--- Notify found no rule and silently no-opped while the anomaly row was still
--- written — detections existed in the UI but never alerted.
---
--- rate_spike and new_scanner are seeded disabled. They fire constantly on any
--- public host (a scanner walking /wp-admin trips new_scanner every time) and
--- there is nothing to do about them here — blocking is Cloudflare's job. The
--- detector still records them for the Security page; they just stay out of
--- Discord unless toggled on from /alerts. 5xx_anomaly stays on: that one means
--- your app is broken.
+-- The last one matches the type the anomaly detector emits. Without it, Notify
+-- found no rule and silently no-opped while the anomaly row was still written.
+-- The detector's old rate_spike and new_scanner types went with blocking: they
+-- picked IPs to block, and blocking is Cloudflare's job.
 INSERT OR IGNORE INTO alert_rules (name, type, enabled, threshold, window_minutes, cooldown_minutes) VALUES
     ('5xx Spike', '5xx_spike', 1, 5, 5, 15),
     ('Traffic Surge', 'traffic_surge', 1, 500, 5, 30),
     ('App Error', 'app_error', 1, 1, 5, 30),
     ('Downtime', 'downtime', 1, 1, 1, 15),
-    ('Rate Spike', 'rate_spike', 0, 1, 5, 60),
-    ('New Scanner', 'new_scanner', 0, 1, 10, 60),
     ('5xx Anomaly', '5xx_anomaly', 1, 1, 60, 60);
 
 -- Uptime monitoring
@@ -164,6 +155,24 @@ CREATE TABLE IF NOT EXISTS daily_stats (
     errors       INTEGER NOT NULL,
     avg_duration REAL NOT NULL,
     bytes        INTEGER NOT NULL
+);
+
+-- Hourly rollup of requests, for the History charts and the 5xx anomaly check.
+-- Those used to scan raw rows on every load: up to 850k rows for the 7-day
+-- range, with a json_each per row for the latency exclusion. Percentiles are
+-- computed in Go (database.RollupHours) over durations that skip
+-- LATENCY_EXCLUDE prefixes; lat_count is how many durations that was, so an
+-- hour of nothing but long polls plots no latency point. The current hour is
+-- never read from here: HourlySeries computes it live from raw.
+CREATE TABLE IF NOT EXISTS hourly_stats (
+    hour       TEXT PRIMARY KEY,   -- 'YYYY-MM-DD HH:00', UTC
+    total      INTEGER NOT NULL,
+    errors_5xx INTEGER NOT NULL,
+    bytes      INTEGER NOT NULL,
+    lat_count  INTEGER NOT NULL,
+    p50        REAL NOT NULL,
+    p95        REAL NOT NULL,
+    p99        REAL NOT NULL
 );
 
 -- Applied-migration ledger. Without this the timestamp normalisation below ran

@@ -356,19 +356,6 @@ tr:hover { background: var(--surface-hover); }
   min-width: 2px;
 }
 
-/* ===== Threat Badges ===== */
-.threat-badge {
-  display: inline-block;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #fff;
-}
-.threat-med { background: var(--amber); }
-.threat-high { background: #e07030; }
-.threat-crit { background: var(--red); }
-
 /* ===== Sparklines ===== */
 .sparkline { width: 80px; height: 20px; vertical-align: middle; }
 

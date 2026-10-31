@@ -1,15 +1,3 @@
--- name: HourlyRequestCounts :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?
-GROUP BY hour ORDER BY hour;
-
--- name: HourlyRequestCountsByHost :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
-GROUP BY hour ORDER BY hour;
-
 -- Reads the rollup, not raw rows. Previously this recomputed six aggregates
 -- (including a COUNT DISTINCT) over a 30-day partition of `requests` on every
 -- /history load and every /partials/daily poll.
@@ -22,7 +10,7 @@ ORDER BY day DESC;
 -- Recomputes one day from raw. Called for today and yesterday on each rollup
 -- tick (yesterday so the final late-arriving rows are folded in), and for every
 -- uncovered day during backfill. UPSERT so re-running is idempotent.
--- avg_duration leaves out latency_exclude prefixes, as HourlyDurations does;
+-- avg_duration leaves out latency_exclude prefixes, as HourRows does;
 -- AVG skips the NULLs.
 -- name: RollupDailyStats :exec
 INSERT INTO daily_stats (day, total, bots, unique_ips, errors, avg_duration, bytes)
@@ -64,8 +52,12 @@ ORDER BY day;
 -- name: DeleteDailyStatsBefore :exec
 DELETE FROM daily_stats WHERE day < sqlc.arg(cutoff_day);
 
+-- Ordered by ts, not id, so idx_requests_ts serves both the range and the
+-- order and the scan stops at the limit. ORDER BY id DESC made the planner
+-- sort the whole range in a temp B-tree first. The id tiebreak matches the
+-- index, whose entries are (ts, rowid).
 -- name: SearchRequests :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
@@ -74,30 +66,11 @@ WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
        OR (sqlc.arg(status_filter) >= 10 AND status = sqlc.arg(status_filter)))
   AND (sqlc.arg(ua_filter) = '' OR user_agent LIKE '%' || sqlc.arg(ua_filter) || '%')
   AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
-ORDER BY id DESC
+ORDER BY ts DESC, id DESC
 LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
--- latency_exclude is a JSON array of URI prefixes (LATENCY_EXCLUDE). Long polls
--- such as skycam's /api/demand hold every request open for a fixed time, so at
--- low traffic they pin p95 and p99 to their timeout. substr rather than LIKE so
--- a prefix containing _ or % matches literally.
--- name: HourlyDurations :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, duration_ms
-FROM requests
-WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
-  AND NOT EXISTS (
-    SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
-    WHERE substr(requests.uri, 1, length(x.value)) = x.value)
-ORDER BY hour, duration_ms;
-
--- name: HourlyBandwidth :many
-SELECT strftime('%Y-%m-%d %H:00', ts) AS hour, SUM(size) AS total_bytes, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= sqlc.arg(since) AND (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
-GROUP BY hour ORDER BY hour;
-
 -- name: SearchRequestsExport :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
@@ -106,7 +79,7 @@ WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
        OR (sqlc.arg(status_filter) >= 10 AND status = sqlc.arg(status_filter)))
   AND (sqlc.arg(ua_filter) = '' OR user_agent LIKE '%' || sqlc.arg(ua_filter) || '%')
   AND ts >= sqlc.arg(from_ts) AND ts <= sqlc.arg(to_ts)
-ORDER BY id DESC
+ORDER BY ts DESC, id DESC
 LIMIT 10000;
 
 -- SearchRequests, slowest first. A separate query because sqlc's SQLite engine
@@ -115,7 +88,7 @@ LIMIT 10000;
 -- LATENCY_EXCLUDE paths: long polls are slow by design and would fill the
 -- first page. Newest-first still shows them.
 -- name: SearchRequestsSlowest :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
@@ -132,7 +105,7 @@ LIMIT sqlc.arg(lim) OFFSET sqlc.arg(off);
 
 -- SearchRequestsExport, slowest first. See SearchRequestsSlowest.
 -- name: SearchRequestsExportSlowest :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
+SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot
 FROM requests
 WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
   AND (sqlc.arg(ip_filter) = '' OR client_ip = sqlc.arg(ip_filter))
@@ -146,3 +119,32 @@ WHERE (sqlc.arg(host_filter) = '' OR host = sqlc.arg(host_filter))
     WHERE substr(requests.uri, 1, length(x.value)) = x.value)
 ORDER BY duration_ms DESC, id DESC
 LIMIT 10000;
+
+-- Raw rows for one hour of hourly_stats. excluded marks LATENCY_EXCLUDE
+-- prefixes (see config.LatencyExcludeJSON): long polls such as skycam's
+-- /api/demand hold every request open for a fixed time, so at low traffic they
+-- would pin p95 and p99 to their timeout. They still count as traffic. substr
+-- rather than LIKE so a prefix containing _ or % matches literally.
+-- name: HourRows :many
+SELECT status, size, duration_ms,
+    CAST(EXISTS (
+        SELECT 1 FROM json_each(CAST(sqlc.arg(latency_exclude) AS TEXT)) AS x
+        WHERE substr(requests.uri, 1, length(x.value)) = x.value) AS INTEGER) AS excluded
+FROM requests
+WHERE ts >= sqlc.arg(from_ts) AND ts < sqlc.arg(to_ts);
+
+-- name: UpsertHourlyStats :exec
+INSERT INTO hourly_stats (hour, total, errors_5xx, bytes, lat_count, p50, p95, p99)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(hour) DO UPDATE SET
+    total = excluded.total, errors_5xx = excluded.errors_5xx, bytes = excluded.bytes,
+    lat_count = excluded.lat_count, p50 = excluded.p50, p95 = excluded.p95, p99 = excluded.p99;
+
+-- name: HourlyStatsSince :many
+SELECT hour, total, errors_5xx, bytes, lat_count, p50, p95, p99
+FROM hourly_stats
+WHERE hour >= sqlc.arg(from_hour)
+ORDER BY hour;
+
+-- name: DeleteHourlyStatsBefore :exec
+DELETE FROM hourly_stats WHERE hour < sqlc.arg(cutoff_hour);

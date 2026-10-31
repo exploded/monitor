@@ -113,6 +113,9 @@ func main() {
 		if err := database.Rollup(ctx, q, firstPass, cfg.LatencyExcludeJSON()); err != nil {
 			slog.Error("rollup", "err", err)
 		}
+		if err := database.RollupHours(ctx, q, firstPass, cfg.LatencyExcludeJSON()); err != nil {
+			slog.Error("rollup hours", "err", err)
+		}
 		firstPass = false
 		if err := database.Prune(ctx, q, retention); err != nil {
 			slog.Error("prune", "err", err)
@@ -146,7 +149,7 @@ func main() {
 	slog.Info("uptime monitor started")
 
 	// Start anomaly detector
-	anomalyDetector := anomaly.New(q, alertEngine)
+	anomalyDetector := anomaly.New(q, alertEngine, cfg.LatencyExcludeJSON())
 	go anomalyDetector.Run(ctx)
 	slog.Info("anomaly detector started")
 
@@ -171,13 +174,8 @@ func main() {
 	mux.HandleFunc("GET /", h.Dashboard)
 	mux.HandleFunc("GET /partials/traffic", h.TrafficOverview)
 
-	// Requests
-	mux.HandleFunc("GET /requests", h.RecentRequestsPage)
-	mux.HandleFunc("GET /partials/requests", h.RequestsPartial)
-
-	// Referrers
-	mux.HandleFunc("GET /referrers", h.ReferrersPage)
-	mux.HandleFunc("GET /partials/referrers", h.ReferrersPartial)
+	// Requests moved to History's search panel; keep old links working.
+	mux.Handle("GET /requests", http.RedirectHandler("/history", http.StatusMovedPermanently))
 
 	// Security
 	mux.HandleFunc("GET /security", h.Security)
@@ -199,10 +197,7 @@ func main() {
 
 	// History
 	mux.HandleFunc("GET /history", h.History)
-	mux.HandleFunc("GET /partials/hourly", h.HourlyChart)
-	mux.HandleFunc("GET /partials/daily", h.DailySummary)
-	mux.HandleFunc("GET /partials/latency", h.LatencyChart)
-	mux.HandleFunc("GET /partials/bandwidth", h.BandwidthChart)
+	mux.HandleFunc("GET /partials/history-charts", h.HistoryCharts)
 	mux.HandleFunc("GET /partials/uptime", h.UptimeChart)
 	mux.HandleFunc("GET /search", h.Search)
 	mux.HandleFunc("GET /export/search", h.ExportSearch)

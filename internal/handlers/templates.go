@@ -7,11 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/exploded/monitor/internal/reputation"
 )
 
 // melbourne is the IANA timezone used for all displayed timestamps.
@@ -130,34 +127,6 @@ func LoadTemplates(dir string) (PageTemplates, error) {
 		},
 		"multiply": func(a, b int) int { return a * b },
 		"toInt64": func(f float64) int64 { return int64(f) },
-		"threatBadge": func(score int) template.HTML {
-			cls := reputation.BadgeClass(score)
-			if cls == "" {
-				return ""
-			}
-			return template.HTML(`<span class="threat-badge ` + cls + `">` + strconv.Itoa(score) + `</span>`)
-		},
-		"refererLabel": func(ref string) string {
-			r := strings.ToLower(ref)
-			switch {
-			case strings.Contains(r, "google."):
-				return "Google"
-			case strings.Contains(r, "bing."):
-				return "Bing"
-			case strings.Contains(r, "duckduckgo."):
-				return "DuckDuckGo"
-			case strings.Contains(r, "yahoo."):
-				return "Yahoo"
-			case strings.Contains(r, "facebook.") || strings.Contains(r, "fb."):
-				return "Facebook"
-			case strings.Contains(r, "twitter.") || strings.Contains(r, "t.co/") || r == "https://t.co" || r == "http://t.co":
-				return "Twitter/X"
-			case strings.Contains(r, "reddit."):
-				return "Reddit"
-			default:
-				return ref
-			}
-		},
 		"divFloat": func(a, b int64) float64 {
 			if b == 0 {
 				return 0

@@ -15,12 +15,12 @@ Blocking is handled by Cloudflare, not by this app. Monitor used to push IP and 
 ## Features
 
 - **Real-time log ingestion** — tails Caddy JSON access logs, batch-inserts to SQLite
-- **Dashboard** — auto-refreshing traffic overview, per-host sparklines, IP threat scores
+- **Dashboard** — auto-refreshing traffic overview, per-host sparklines, top IPs, user agents and countries
 - **Bot detection** — configurable user agent pattern matching, seeded with common bots
 - **Uptime checks** — HTTP probes per target, with alerts on outage and on recovery
 - **App log ingestion** — sibling apps ship WARN+ here via `pkg/logship`
 - **Discord alerts** — 5xx spikes, traffic surges, per-app errors, downtime, anomalies
-- **Historical views** — hourly SVG bar chart, daily summary, search/filter, CSV export
+- **Historical views** — newest requests with search/filter and CSV export, hourly requests, latency and bandwidth charts, daily summary
 - **HTTP basic auth** — protects the portal
 - **Log rotation handling** — detects inode change or truncation, reopens file
 - **Automatic pruning** — batched deletes on per-table retention horizons, with daily rollups preserving long-run history
@@ -180,7 +180,7 @@ What fires:
 | `downtime` | An uptime target failing 2 consecutive probes | 15 min cooldown per target |
 | `5xx_spike` | 5xx responses in the Caddy log over a window | 5 in 5 min |
 | `traffic_surge` | Total requests over a window | 500 in 5 min |
-| `rate_spike`, `new_scanner`, `5xx_anomaly` | Anomaly detector | 60 min cooldown |
+| `5xx_anomaly` | 5xx rate in the current hour well above the 24h baseline | 60 min cooldown |
 
 Every outage also produces a green recovery notification when the target comes back.
 Cooldowns are per subject, not per rule, so two services failing together produce two
@@ -192,12 +192,13 @@ Sibling apps ship their logs here with `pkg/logship`, gated on `MONITOR_URL` and
 ## Data Retention
 
 Raw events expire quickly because nothing in the UI reads them for long — every
-range selector caps at 7 days, and the only 30-day readers are the daily summary
-and the host list. Long-run history lives in two rollup tables instead.
+range selector caps at 7 days, and only search reaches back 30. History lives in
+rollup tables instead: `hourly_stats` for the History charts, `daily_stats` and
+`uptime_daily` for the long run.
 
 | Table | Raw | Kept as |
 |---|---|---|
-| `requests` | 30 days | `daily_stats`, ~13 months |
+| `requests` | 30 days | `hourly_stats`, 8 days; `daily_stats`, ~13 months |
 | `uptime_checks` | 14 days | `uptime_daily`, ~13 months |
 | `app_logs` | 90d ERROR / 14d below | — |
 | `anomalies` | 90 days | — |
@@ -257,6 +258,7 @@ internal/
   database/
     database.go               — SQLite WAL open, schema, migrations, pruning
     rollup.go                 — daily aggregate refresh and backfill
+    hourly.go                 — hourly_stats rollup and the History series
   watcher/
     watcher.go                — Caddy log tail, parse, batch ingest
     matcher.go                — bot pattern matching
@@ -272,8 +274,8 @@ internal/
     history.go                — charts, daily summary, search
   alerts/                     — alert engine + Discord transport
   uptime/uptime.go            — HTTP probes, failure debounce, recovery
-  anomaly/detector.go         — rate spikes, new scanners, 5xx anomalies
-  reputation/reputation.go    — per-IP threat score
+  anomaly/detector.go         — 5xx anomalies
+  traffic/traffic.go          — cached 24h dashboard snapshot
 db/
   schema.sql                  — tables, indexes, seed data
   queries/                    — SQLC query files

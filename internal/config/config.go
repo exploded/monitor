@@ -57,10 +57,10 @@ func (c Config) LatencyExcludeJSON() string {
 func Load() Config {
 	loadDotEnv(".env")
 
-	// Raw-event horizons. Nothing in the UI reads `requests` past 30 days (every
-	// range selector caps at 7d; DailySummary and DistinctHosts reach 30d), and
-	// nothing reads `uptime_checks` past 7 days — history beyond those lives in
-	// the daily_stats and uptime_daily rollups instead.
+	// Raw-event horizons. Only search reads `requests` past 7 days (the History
+	// charts read the hourly_stats rollup and cap at 7d), and nothing reads
+	// `uptime_checks` past 7 days — history beyond those lives in the
+	// daily_stats and uptime_daily rollups instead.
 	prod := strings.EqualFold(os.Getenv("PROD"), "true")
 
 	return Config{

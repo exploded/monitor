@@ -12,17 +12,14 @@
 
 <script>
 document.getElementById('range-select').addEventListener('change', function() {
-  var r = this.value;
-  htmx.ajax('GET', '/partials/hourly?range=' + r, {target:'#hourly-chart', swap:'innerHTML'});
-  htmx.ajax('GET', '/partials/latency?range=' + r, {target:'#latency-chart', swap:'innerHTML'});
-  htmx.ajax('GET', '/partials/bandwidth?range=' + r, {target:'#bandwidth-chart', swap:'innerHTML'});
-
+  htmx.ajax('GET', '/partials/history-charts?range=' + this.value, {target:'#history-charts', swap:'innerHTML'});
 });
 </script>
 
-{{/* Search, at the top so it's easy to find. From/To are Melbourne time. */}}
+{{/* Requests, at the top so it's easy to find. The newest load on arrival,
+     which is what the old /requests page was for. From/To are Melbourne time. */}}
 <section class="panel panel-wide">
-  <h2>Search requests</h2>
+  <h2>Requests</h2>
   <form id="search-form" hx-get="/search" hx-target="#search-results" hx-swap="innerHTML" class="search-form">
     <input type="text" name="host" placeholder="Host">
     <input type="text" name="ip" placeholder="IP">
@@ -45,7 +42,7 @@ document.getElementById('range-select').addEventListener('change', function() {
     <button type="button" class="btn btn-secondary" onclick="exportResults('csv')">Export CSV</button>
     <button type="button" class="btn btn-secondary" onclick="exportResults('json')">Export JSON</button>
   </form>
-  <div id="search-results"></div>
+  <div id="search-results" hx-get="/search" hx-trigger="load"><p class="muted">Loading…</p></div>
 </section>
 
 <script>
@@ -57,20 +54,9 @@ function exportResults(format) {
 }
 </script>
 
-{{/* Hourly Chart */}}
-<section class="panel panel-wide" id="hourly-chart">
-  {{template "_hourly_chart" .}}
-</section>
-
-{{/* Latency Percentiles */}}
-<section class="panel panel-wide" id="latency-chart">
-  {{template "_latency_chart" .}}
-</section>
-
-{{/* Bandwidth */}}
-<section class="panel panel-wide" id="bandwidth-chart">
-  {{template "_bandwidth_chart" .}}
-</section>
+<div id="history-charts">
+  {{template "_history_charts" .}}
+</div>
 
 {{/* Daily Summary */}}
 <section class="panel panel-wide" id="daily-summary">

@@ -18,7 +18,7 @@ const sampleLimit = 200
 
 // Event is an immediate alert event (uptime downtime, anomaly detection).
 type Event struct {
-	Type string // "downtime", "rate_spike", "new_scanner", "5xx_anomaly"
+	Type string // "downtime", "5xx_anomaly"
 
 	// Key scopes the cooldown to one subject — a single uptime target, a single
 	// IP. Without it the cooldown is per rule, so ten services failing inside one

@@ -19,16 +19,11 @@ import (
 	"time"
 
 	db "github.com/exploded/monitor/db/sqlc"
-	"github.com/exploded/monitor/internal/reputation"
 )
 
 const (
 	window       = 24 * time.Hour
 	sparkMinutes = 60
-	// Below this the reputation score is noise; the 26 cutoff matches
-	// reputation.BadgeClass.
-	minScoredRequests = 3
-	minShownScore     = 26
 )
 
 type IPCount struct {
@@ -52,11 +47,6 @@ type StatusCount struct {
 	Cnt    int64
 }
 
-type RefererCount struct {
-	Referer string
-	Cnt     int64
-}
-
 type CountryCount struct {
 	Country string
 	Cnt     int64
@@ -72,29 +62,20 @@ type Snapshot struct {
 	TopUAs       []UACount
 	ByHost       []HostCount
 	StatusCodes  []StatusCount
-	TopReferrers []RefererCount
 	TopCountries []CountryCount
-	// IPScores holds threat scores worth a badge, for the IPs in TopIPs only.
-	IPScores map[string]int
 	// Sparklines maps host to SVG polyline points for its last 60 minutes.
 	Sparklines map[string]string
-}
-
-type ipStats struct {
-	total, count4xx, bots int64
-	first, last           time.Time
 }
 
 // Summarise aggregates rows (every request since now-24h) in one pass.
 func Summarise(rows []db.TrafficRowsSinceRow, now time.Time) *Snapshot {
 	s := &Snapshot{AsOf: now, Total: int64(len(rows))}
 
-	ips := make(map[string]*ipStats)
+	ips := make(map[string]int64)
 	uas := make(map[string]int64)
 	uaBot := make(map[string]bool)
 	hosts := make(map[string]int64)
 	statuses := make(map[int64]int64)
-	referers := make(map[string]int64)
 	countries := make(map[string]int64)
 
 	// Sparkline buckets are whole minutes; the current, partial minute is left
@@ -104,39 +85,14 @@ func Summarise(rows []db.TrafficRowsSinceRow, now time.Time) *Snapshot {
 	minutes := make(map[string]*[sparkMinutes]int64)
 
 	for _, r := range rows {
-		bot := r.IsBot == 1
-		if bot {
+		if r.IsBot == 1 {
 			s.Bots++
-		}
-
-		ip := ips[r.ClientIp]
-		if ip == nil {
-			ip = &ipStats{first: r.Ts, last: r.Ts}
-			ips[r.ClientIp] = ip
-		}
-		ip.total++
-		if r.Status >= 400 && r.Status < 500 {
-			ip.count4xx++
-		}
-		if bot {
-			ip.bots++
-		}
-		if r.Ts.Before(ip.first) {
-			ip.first = r.Ts
-		}
-		if r.Ts.After(ip.last) {
-			ip.last = r.Ts
-		}
-
-		uas[r.UserAgent]++
-		if bot {
 			uaBot[r.UserAgent] = true
 		}
+		ips[r.ClientIp]++
+		uas[r.UserAgent]++
 		hosts[r.Host]++
 		statuses[r.Status]++
-		if r.Referer != "" {
-			referers[r.Referer]++
-		}
 		if r.Country != "" {
 			countries[r.Country]++
 		}
@@ -155,28 +111,8 @@ func Summarise(rows []db.TrafficRowsSinceRow, now time.Time) *Snapshot {
 
 	s.UniqueIPs = int64(len(ips))
 
-	ipTotals := make(map[string]int64, len(ips))
-	for k, v := range ips {
-		ipTotals[k] = v.total
-	}
-	s.IPScores = make(map[string]int)
-	for _, k := range topN(ipTotals, 10) {
-		st := ips[k]
-		s.TopIPs = append(s.TopIPs, IPCount{ClientIP: k, Cnt: st.total})
-		if st.total < minScoredRequests {
-			continue
-		}
-		score := reputation.Compute(reputation.IPData{
-			ClientIP:  k,
-			Total:     st.total,
-			Count4xx:  st.count4xx,
-			BotCount:  st.bots,
-			FirstSeen: st.first,
-			LastSeen:  st.last,
-		})
-		if score.Value >= minShownScore {
-			s.IPScores[k] = score.Value
-		}
+	for _, k := range topN(ips, 10) {
+		s.TopIPs = append(s.TopIPs, IPCount{ClientIP: k, Cnt: ips[k]})
 	}
 
 	for _, k := range topN(uas, 10) {
@@ -184,9 +120,6 @@ func Summarise(rows []db.TrafficRowsSinceRow, now time.Time) *Snapshot {
 	}
 	for _, k := range topN(hosts, 0) {
 		s.ByHost = append(s.ByHost, HostCount{Host: k, Cnt: hosts[k]})
-	}
-	for _, k := range topN(referers, 10) {
-		s.TopReferrers = append(s.TopReferrers, RefererCount{Referer: k, Cnt: referers[k]})
 	}
 	for _, k := range topN(countries, 15) {
 		s.TopCountries = append(s.TopCountries, CountryCount{Country: k, Cnt: countries[k]})

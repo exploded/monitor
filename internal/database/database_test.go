@@ -135,6 +135,7 @@ func TestDroppedColumnsAreGone(t *testing.T) {
 		{"requests", "city"},
 		{"uptime_checks", "created_at"},
 		{"bot_patterns", "block"},
+		{"requests", "referer"},
 	} {
 		var n int
 		err := d.QueryRow(
@@ -289,12 +290,90 @@ func TestBlockingArtifactsAreMigratedAway(t *testing.T) {
 	}
 }
 
+// TestScannerAndRefererArtifactsAreMigratedAway covers the production upgrade
+// for the second cleanup: requests.referer is dropped without losing rows, and
+// the rate_spike/new_scanner rules, their alert_log rows and their anomalies
+// go, while the 5xx anomaly's stay.
+func TestScannerAndRefererArtifactsAreMigratedAway(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`
+		CREATE TABLE requests (
+		    id INTEGER PRIMARY KEY, ts DATETIME NOT NULL, host TEXT NOT NULL,
+		    client_ip TEXT NOT NULL, method TEXT NOT NULL, uri TEXT NOT NULL,
+		    status INTEGER NOT NULL, size INTEGER NOT NULL, user_agent TEXT NOT NULL,
+		    duration_ms REAL NOT NULL, is_bot INTEGER NOT NULL DEFAULT 0,
+		    country TEXT NOT NULL DEFAULT '', referer TEXT NOT NULL DEFAULT '');
+		CREATE TABLE alert_rules (
+		    id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, type TEXT NOT NULL,
+		    enabled INTEGER NOT NULL DEFAULT 1, threshold INTEGER NOT NULL DEFAULT 0,
+		    window_minutes INTEGER NOT NULL DEFAULT 5, cooldown_minutes INTEGER NOT NULL DEFAULT 15,
+		    last_fired_at DATETIME, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE alert_log (
+		    id INTEGER PRIMARY KEY, rule_id INTEGER NOT NULL REFERENCES alert_rules(id),
+		    type TEXT NOT NULL, message TEXT NOT NULL, details TEXT NOT NULL DEFAULT '{}',
+		    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+		CREATE TABLE anomalies (
+		    id INTEGER PRIMARY KEY, ts DATETIME NOT NULL, type TEXT NOT NULL,
+		    client_ip TEXT NOT NULL DEFAULT '', host TEXT NOT NULL DEFAULT '',
+		    description TEXT NOT NULL, score REAL NOT NULL DEFAULT 0,
+		    acknowledged INTEGER NOT NULL DEFAULT 0,
+		    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);
+
+		INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, referer)
+		    VALUES ('2026-10-30 01:00:00.000+00:00', 'a.example', '1.1.1.1', 'GET', '/', 200, 10, 'ua', 5, 'https://www.google.com/');
+		INSERT INTO alert_rules (id, name, type, threshold, window_minutes, cooldown_minutes)
+		    VALUES (1, 'Rate Spike', 'rate_spike', 1, 5, 60), (2, 'New Scanner', 'new_scanner', 1, 10, 60),
+		           (3, '5xx Anomaly', '5xx_anomaly', 1, 60, 60);
+		INSERT INTO alert_log (rule_id, type, message) VALUES
+		    (1, 'rate_spike', 'IP 203.0.113.9'), (3, '5xx_anomaly', '5xx rate 9%');
+		INSERT INTO anomalies (ts, type, client_ip, description) VALUES
+		    ('2026-10-30 01:00:00', 'new_scanner', '203.0.113.9', 'scanner'),
+		    ('2026-10-30 01:00:00', '5xx_anomaly', '', '5xx rate 9%');
+	`); err != nil {
+		t.Fatalf("build legacy database: %v", err)
+	}
+	legacy.Close()
+
+	d, err := Open(path, schemaPath(t))
+	if err != nil {
+		t.Fatalf("Open on legacy database: %v", err)
+	}
+	defer d.Close()
+
+	for _, tc := range []struct {
+		name, query string
+		want        int
+	}{
+		{"referer column", `SELECT COUNT(*) FROM pragma_table_info('requests') WHERE name = 'referer'`, 0},
+		{"request rows", `SELECT COUNT(*) FROM requests`, 1},
+		{"scanner rules", `SELECT COUNT(*) FROM alert_rules WHERE type IN ('rate_spike', 'new_scanner')`, 0},
+		{"scanner alert_log", `SELECT COUNT(*) FROM alert_log WHERE type IN ('rate_spike', 'new_scanner')`, 0},
+		{"scanner anomalies", `SELECT COUNT(*) FROM anomalies WHERE type IN ('rate_spike', 'new_scanner')`, 0},
+		{"5xx rule", `SELECT COUNT(*) FROM alert_rules WHERE type = '5xx_anomaly'`, 1},
+		{"5xx alert_log", `SELECT COUNT(*) FROM alert_log WHERE type = '5xx_anomaly'`, 1},
+		{"5xx anomalies", `SELECT COUNT(*) FROM anomalies WHERE type = '5xx_anomaly'`, 1},
+	} {
+		var got int
+		if err := d.QueryRow(tc.query).Scan(&got); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got != tc.want {
+			t.Errorf("%s: got %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
 func insertRequest(t *testing.T, q *db.Queries, ts time.Time, status int64, ip string) {
 	t.Helper()
 	err := q.InsertRequest(context.Background(), db.InsertRequestParams{
 		Ts: ts, Host: "example.com", ClientIp: ip, Method: "GET", Uri: "/",
 		Status: status, Size: 100, UserAgent: "test", DurationMs: 5, IsBot: 0,
-		Country: "AU", Referer: "",
+		Country: "AU",
 	})
 	if err != nil {
 		t.Fatalf("InsertRequest: %v", err)
@@ -474,7 +553,7 @@ func TestRollupIsIdempotent(t *testing.T) {
 }
 
 // TestLatencyExclude checks that long-poll prefixes drop out of both latency
-// views, the hourly durations and the daily average, but still count as traffic.
+// views, the hourly percentiles and the daily average, but still count as traffic.
 func TestLatencyExclude(t *testing.T) {
 	_, q := openTestDB(t)
 	ctx := context.Background()
@@ -485,7 +564,7 @@ func TestLatencyExclude(t *testing.T) {
 		err := q.InsertRequest(ctx, db.InsertRequestParams{
 			Ts: now, Host: "example.com", ClientIp: "1.1.1.1", Method: "GET", Uri: uri,
 			Status: 200, Size: 100, UserAgent: "test", DurationMs: ms, IsBot: 0,
-			Country: "AU", Referer: "",
+			Country: "AU",
 		})
 		if err != nil {
 			t.Fatalf("InsertRequest: %v", err)
@@ -497,25 +576,23 @@ func TestLatencyExclude(t *testing.T) {
 	add("/api/demands-elsewhere", 30) // shares the prefix, so excluded too
 	add("/xay", 20)                   // would match prefix /x_ if _ were a wildcard
 
-	durations := func(exclude string) []float64 {
+	current := func(exclude string) db.HourlyStat {
 		t.Helper()
-		rows, err := q.HourlyDurations(ctx, db.HourlyDurationsParams{
-			Since: now.Add(-time.Hour), HostFilter: "", LatencyExclude: exclude,
-		})
+		series, err := HourlySeries(ctx, q, now, exclude)
 		if err != nil {
-			t.Fatalf("HourlyDurations(%s): %v", exclude, err)
+			t.Fatalf("HourlySeries(%s): %v", exclude, err)
 		}
-		var out []float64
-		for _, r := range rows {
-			out = append(out, r.DurationMs)
+		if len(series) != 1 {
+			t.Fatalf("HourlySeries(%s): %d hours, want 1", exclude, len(series))
 		}
-		return out
+		return series[0]
 	}
-	if got := durations("[]"); len(got) != 5 {
-		t.Errorf("no exclusions: %d rows, want 5", len(got))
+	if got := current("[]"); got.Total != 5 || got.LatCount != 5 || got.P99 != 25005 {
+		t.Errorf("no exclusions: total %d, lat_count %d, p99 %v; want 5, 5, 25005", got.Total, got.LatCount, got.P99)
 	}
-	if got := durations(`["/api/demand","/x_"]`); len(got) != 2 || got[0] != 10 || got[1] != 20 {
-		t.Errorf("excluding /api/demand: got %v, want [10 20]", got)
+	if got := current(`["/api/demand","/x_"]`); got.Total != 5 || got.LatCount != 2 || got.P50 != 20 || got.P99 != 20 {
+		t.Errorf("excluding /api/demand: total %d, lat_count %d, p50 %v, p99 %v; want 5, 2, 20, 20",
+			got.Total, got.LatCount, got.P50, got.P99)
 	}
 
 	if err := Rollup(ctx, q, true, `["/api/demand"]`); err != nil {

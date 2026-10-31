@@ -11,34 +11,12 @@ import (
 	"time"
 )
 
-const countBotRequestsSince = `-- name: CountBotRequestsSince :one
-SELECT COUNT(*) FROM requests WHERE ts >= ? AND is_bot = 1
-`
-
-func (q *Queries) CountBotRequestsSince(ctx context.Context, ts time.Time) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countBotRequestsSince, ts)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countRequestsSince = `-- name: CountRequestsSince :one
 SELECT COUNT(*) FROM requests WHERE ts >= ?
 `
 
 func (q *Queries) CountRequestsSince(ctx context.Context, ts time.Time) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countRequestsSince, ts)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countUniqueIPsSince = `-- name: CountUniqueIPsSince :one
-SELECT COUNT(DISTINCT client_ip) FROM requests WHERE ts >= ?
-`
-
-func (q *Queries) CountUniqueIPsSince(ctx context.Context, ts time.Time) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countUniqueIPsSince, ts)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -62,36 +40,9 @@ func (q *Queries) DeleteRequestsBeforeBatch(ctx context.Context, arg DeleteReque
 	return q.db.ExecContext(ctx, deleteRequestsBeforeBatch, arg.Cutoff, arg.BatchSize)
 }
 
-const distinctHosts = `-- name: DistinctHosts :many
-SELECT DISTINCT host FROM requests WHERE ts >= ? ORDER BY host
-`
-
-func (q *Queries) DistinctHosts(ctx context.Context, ts time.Time) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, distinctHosts, ts)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var host string
-		if err := rows.Scan(&host); err != nil {
-			return nil, err
-		}
-		items = append(items, host)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const insertRequest = `-- name: InsertRequest :exec
-INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country, referer)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO requests (ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, country)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertRequestParams struct {
@@ -106,7 +57,6 @@ type InsertRequestParams struct {
 	DurationMs float64   `json:"duration_ms"`
 	IsBot      int64     `json:"is_bot"`
 	Country    string    `json:"country"`
-	Referer    string    `json:"referer"`
 }
 
 func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) error {
@@ -122,177 +72,12 @@ func (q *Queries) InsertRequest(ctx context.Context, arg InsertRequestParams) er
 		arg.DurationMs,
 		arg.IsBot,
 		arg.Country,
-		arg.Referer,
 	)
 	return err
 }
 
-const recentRequestsSince = `-- name: RecentRequestsSince :many
-SELECT id, ts, host, client_ip, method, uri, status, size, user_agent, duration_ms, is_bot, referer
-FROM requests WHERE ts >= ? ORDER BY id DESC LIMIT ?
-`
-
-type RecentRequestsSinceParams struct {
-	Ts    time.Time `json:"ts"`
-	Limit int64     `json:"limit"`
-}
-
-type RecentRequestsSinceRow struct {
-	ID         int64     `json:"id"`
-	Ts         time.Time `json:"ts"`
-	Host       string    `json:"host"`
-	ClientIp   string    `json:"client_ip"`
-	Method     string    `json:"method"`
-	Uri        string    `json:"uri"`
-	Status     int64     `json:"status"`
-	Size       int64     `json:"size"`
-	UserAgent  string    `json:"user_agent"`
-	DurationMs float64   `json:"duration_ms"`
-	IsBot      int64     `json:"is_bot"`
-	Referer    string    `json:"referer"`
-}
-
-func (q *Queries) RecentRequestsSince(ctx context.Context, arg RecentRequestsSinceParams) ([]RecentRequestsSinceRow, error) {
-	rows, err := q.db.QueryContext(ctx, recentRequestsSince, arg.Ts, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []RecentRequestsSinceRow
-	for rows.Next() {
-		var i RecentRequestsSinceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Ts,
-			&i.Host,
-			&i.ClientIp,
-			&i.Method,
-			&i.Uri,
-			&i.Status,
-			&i.Size,
-			&i.UserAgent,
-			&i.DurationMs,
-			&i.IsBot,
-			&i.Referer,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const referrerRequestsByHost = `-- name: ReferrerRequestsByHost :many
-SELECT id, ts, host, client_ip, method, uri, status, user_agent, referer
-FROM requests
-WHERE ts >= ?1
-  AND referer != ''
-  AND (?2 = '' OR host = ?2)
-ORDER BY id DESC LIMIT ?3
-`
-
-type ReferrerRequestsByHostParams struct {
-	Since      time.Time   `json:"since"`
-	HostFilter interface{} `json:"host_filter"`
-	Lim        int64       `json:"lim"`
-}
-
-type ReferrerRequestsByHostRow struct {
-	ID        int64     `json:"id"`
-	Ts        time.Time `json:"ts"`
-	Host      string    `json:"host"`
-	ClientIp  string    `json:"client_ip"`
-	Method    string    `json:"method"`
-	Uri       string    `json:"uri"`
-	Status    int64     `json:"status"`
-	UserAgent string    `json:"user_agent"`
-	Referer   string    `json:"referer"`
-}
-
-func (q *Queries) ReferrerRequestsByHost(ctx context.Context, arg ReferrerRequestsByHostParams) ([]ReferrerRequestsByHostRow, error) {
-	rows, err := q.db.QueryContext(ctx, referrerRequestsByHost, arg.Since, arg.HostFilter, arg.Lim)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ReferrerRequestsByHostRow
-	for rows.Next() {
-		var i ReferrerRequestsByHostRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Ts,
-			&i.Host,
-			&i.ClientIp,
-			&i.Method,
-			&i.Uri,
-			&i.Status,
-			&i.UserAgent,
-			&i.Referer,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const referrersByHost = `-- name: ReferrersByHost :many
-SELECT referer, COUNT(*) AS cnt
-FROM requests
-WHERE ts >= ?1
-  AND referer != ''
-  AND (?2 = '' OR host = ?2)
-GROUP BY referer ORDER BY cnt DESC LIMIT ?3
-`
-
-type ReferrersByHostParams struct {
-	Since      time.Time   `json:"since"`
-	HostFilter interface{} `json:"host_filter"`
-	Lim        int64       `json:"lim"`
-}
-
-type ReferrersByHostRow struct {
-	Referer string `json:"referer"`
-	Cnt     int64  `json:"cnt"`
-}
-
-func (q *Queries) ReferrersByHost(ctx context.Context, arg ReferrersByHostParams) ([]ReferrersByHostRow, error) {
-	rows, err := q.db.QueryContext(ctx, referrersByHost, arg.Since, arg.HostFilter, arg.Lim)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ReferrersByHostRow
-	for rows.Next() {
-		var i ReferrersByHostRow
-		if err := rows.Scan(&i.Referer, &i.Cnt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const trafficRowsSince = `-- name: TrafficRowsSince :many
-SELECT ts, host, client_ip, status, user_agent, is_bot, country, referer
+SELECT ts, host, client_ip, status, user_agent, is_bot, country
 FROM requests WHERE ts >= ?
 `
 
@@ -304,7 +89,6 @@ type TrafficRowsSinceRow struct {
 	UserAgent string    `json:"user_agent"`
 	IsBot     int64     `json:"is_bot"`
 	Country   string    `json:"country"`
-	Referer   string    `json:"referer"`
 }
 
 // The dashboard's traffic panel aggregates these rows in Go (internal/traffic).
@@ -328,7 +112,6 @@ func (q *Queries) TrafficRowsSince(ctx context.Context, ts time.Time) ([]Traffic
 			&i.UserAgent,
 			&i.IsBot,
 			&i.Country,
-			&i.Referer,
 		); err != nil {
 			return nil, err
 		}
