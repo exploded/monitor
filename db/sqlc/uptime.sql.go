@@ -254,7 +254,7 @@ func (q *Queries) ListUptimeTargets(ctx context.Context) ([]UptimeTarget, error)
 
 const recentUptimeChecks = `-- name: RecentUptimeChecks :many
 SELECT id, target_id, ts, status, response_time_ms, error
-FROM uptime_checks WHERE target_id = ? ORDER BY id DESC LIMIT ?
+FROM uptime_checks WHERE target_id = ? ORDER BY ts DESC, id DESC LIMIT ?
 `
 
 type RecentUptimeChecksParams struct {
@@ -262,6 +262,9 @@ type RecentUptimeChecksParams struct {
 	Limit    int64 `json:"limit"`
 }
 
+// Ordered by ts, not id: idx_uptime_checks_target_ts then serves the order and
+// the query stops at LIMIT. ORDER BY id sorted every check the target had ever
+// had in a temp B-tree. id breaks ties, and is the index's trailing column.
 func (q *Queries) RecentUptimeChecks(ctx context.Context, arg RecentUptimeChecksParams) ([]UptimeCheck, error) {
 	rows, err := q.db.QueryContext(ctx, recentUptimeChecks, arg.TargetID, arg.Limit)
 	if err != nil {
@@ -434,30 +437,4 @@ func (q *Queries) UptimeDailySince(ctx context.Context, arg UptimeDailySincePara
 		return nil, err
 	}
 	return items, nil
-}
-
-const uptimePercentage = `-- name: UptimePercentage :one
-SELECT
-    COUNT(*) AS total,
-    SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS up_count
-FROM uptime_checks
-WHERE target_id = ? AND ts >= ?
-`
-
-type UptimePercentageParams struct {
-	Status   int64     `json:"status"`
-	TargetID int64     `json:"target_id"`
-	Ts       time.Time `json:"ts"`
-}
-
-type UptimePercentageRow struct {
-	Total   int64           `json:"total"`
-	UpCount sql.NullFloat64 `json:"up_count"`
-}
-
-func (q *Queries) UptimePercentage(ctx context.Context, arg UptimePercentageParams) (UptimePercentageRow, error) {
-	row := q.db.QueryRowContext(ctx, uptimePercentage, arg.Status, arg.TargetID, arg.Ts)
-	var i UptimePercentageRow
-	err := row.Scan(&i.Total, &i.UpCount)
-	return i, err
 }

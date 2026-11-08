@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"math"
@@ -343,6 +344,9 @@ type UptimeTargetChart struct {
 	RtPoints []UptimeRtPoint
 	MaxMs    float64
 	ChartW   int
+	// For the uptime page's Targets table.
+	AvgMs     float64         // mean response time of successful checks in range
+	LastCheck *db.UptimeCheck // nil if the target has no checks in range
 }
 
 // UptimeRtPoint holds SVG coordinates for a response time chart point.
@@ -459,8 +463,19 @@ func (h *Handler) UptimeChart(w http.ResponseWriter, r *http.Request) {
 
 // buildUptimeChartData fetches uptime checks and builds chart data for all targets.
 func (h *Handler) buildUptimeChartData(r *http.Request) PageData {
-	ctx := r.Context()
 	since, rng := parseRange(r)
+	_, charts := h.uptimeCharts(r.Context(), since)
+	return PageData{Extra: map[string]any{
+		"UptimeCharts": charts,
+		"RangeLabel":   rangeLabels[rng],
+	}}
+}
+
+// uptimeCharts reads each target's checks since `since` once and builds its
+// chart, returning the targets alongside in the same order. The uptime page's
+// Targets table is built from the same result: it used to run three more
+// queries per target for figures these checks already hold.
+func (h *Handler) uptimeCharts(ctx context.Context, since time.Time) ([]db.UptimeTarget, []UptimeTargetChart) {
 	targets, _ := h.q.ListUptimeTargets(ctx)
 
 	var charts []UptimeTargetChart
@@ -474,9 +489,23 @@ func (h *Handler) buildUptimeChartData(r *http.Request) PageData {
 
 		// Determine current status from most recent check
 		isUp := false
+		var lastCheck *db.UptimeCheck
 		if len(checks) > 0 {
-			last := checks[len(checks)-1]
-			isUp = last.Status == t.ExpectedStatus && last.Error == ""
+			lastCheck = &checks[len(checks)-1]
+			isUp = lastCheck.Status == t.ExpectedStatus && lastCheck.Error == ""
+		}
+
+		var sumMs float64
+		var okCnt int
+		for _, c := range checks {
+			if c.Error == "" {
+				sumMs += c.ResponseTimeMs
+				okCnt++
+			}
+		}
+		avgMs := 0.0
+		if okCnt > 0 {
+			avgMs = sumMs / float64(okCnt)
 		}
 
 		chartW := 20
@@ -493,13 +522,11 @@ func (h *Handler) buildUptimeChartData(r *http.Request) PageData {
 			RtPoints:  rtPoints,
 			MaxMs:     maxMs,
 			ChartW:    chartW,
+			AvgMs:     avgMs,
+			LastCheck: lastCheck,
 		})
 	}
-
-	return PageData{Extra: map[string]any{
-		"UptimeCharts": charts,
-		"RangeLabel":   rangeLabels[rng],
-	}}
+	return targets, charts
 }
 
 // Search handles filtered request search.

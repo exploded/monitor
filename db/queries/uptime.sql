@@ -30,15 +30,11 @@ FROM uptime_targets WHERE enabled = 1;
 INSERT INTO uptime_checks (target_id, ts, status, response_time_ms, error) VALUES (?, ?, ?, ?, ?);
 
 -- name: RecentUptimeChecks :many
+-- Ordered by ts, not id: idx_uptime_checks_target_ts then serves the order and
+-- the query stops at LIMIT. ORDER BY id sorted every check the target had ever
+-- had in a temp B-tree. id breaks ties, and is the index's trailing column.
 SELECT id, target_id, ts, status, response_time_ms, error
-FROM uptime_checks WHERE target_id = ? ORDER BY id DESC LIMIT ?;
-
--- name: UptimePercentage :one
-SELECT
-    COUNT(*) AS total,
-    SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS up_count
-FROM uptime_checks
-WHERE target_id = ? AND ts >= ?;
+FROM uptime_checks WHERE target_id = ? ORDER BY ts DESC, id DESC LIMIT ?;
 
 -- name: AvgResponseTime :one
 SELECT COALESCE(ROUND(AVG(response_time_ms), 1), 0) AS avg_ms

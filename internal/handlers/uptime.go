@@ -14,8 +14,9 @@ import (
 // Uptime renders the full uptime monitoring page.
 func (h *Handler) Uptime(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	targets, _ := h.q.ListUptimeTargets(ctx)
-	since := time.Now().UTC().Add(-24 * time.Hour)
+	// The page always opens on 24h: the range select only swaps the chart, and
+	// the Targets table is headed "Uptime (24h)".
+	targets, charts := h.uptimeCharts(ctx, time.Now().UTC().Add(-24*time.Hour))
 
 	type TargetStatus struct {
 		Target    db.UptimeTarget
@@ -25,59 +26,25 @@ func (h *Handler) Uptime(w http.ResponseWriter, r *http.Request) {
 		IsUp      bool
 	}
 
-	var statuses []TargetStatus
-	for _, t := range targets {
-		upRow, _ := h.q.UptimePercentage(ctx, db.UptimePercentageParams{
-			Status:   t.ExpectedStatus,
-			TargetID: t.ID,
-			Ts:       since,
-		})
-		avgRow, _ := h.q.AvgResponseTime(ctx, db.AvgResponseTimeParams{
-			TargetID: t.ID,
-			Ts:       since,
-		})
-		recent, _ := h.q.RecentUptimeChecks(ctx, db.RecentUptimeChecksParams{
-			TargetID: t.ID,
-			Limit:    1,
-		})
-
-		pct := 0.0
-		if upRow.Total > 0 {
-			pct = upRow.UpCount.Float64 / float64(upRow.Total) * 100
+	statuses := make([]TargetStatus, len(targets))
+	for i, t := range targets {
+		c := charts[i]
+		statuses[i] = TargetStatus{Target: t, UptimePct: c.UptimePct, AvgMs: c.AvgMs, LastCheck: c.LastCheck, IsUp: c.IsUp}
+		if c.LastCheck == nil {
+			// Disabled for over a day, or new: its last check, if any, is older
+			// than the window.
+			if recent, _ := h.q.RecentUptimeChecks(ctx, db.RecentUptimeChecksParams{TargetID: t.ID, Limit: 1}); len(recent) > 0 {
+				statuses[i].LastCheck = &recent[0]
+			}
 		}
-
-		avgMs := 0.0
-		if f, ok := avgRow.(float64); ok {
-			avgMs = f
-		}
-
-		var lastCheck *db.UptimeCheck
-		isUp := false
-		if len(recent) > 0 {
-			lastCheck = &recent[0]
-			isUp = recent[0].Status == t.ExpectedStatus && recent[0].Error == ""
-		}
-
-		statuses = append(statuses, TargetStatus{
-			Target:    t,
-			UptimePct: pct,
-			AvgMs:     avgMs,
-			LastCheck: lastCheck,
-			IsUp:      isUp,
-		})
 	}
-
-	// Uptime chart data
-	uptimeData := h.buildUptimeChartData(r)
-	uptimeCharts, _ := uptimeData.Extra["UptimeCharts"]
-	rangeLabel, _ := uptimeData.Extra["RangeLabel"]
 
 	h.render(w, r, "uptime", "", PageData{
 		Title: "Uptime",
 		Extra: map[string]any{
 			"Statuses":     statuses,
-			"UptimeCharts": uptimeCharts,
-			"RangeLabel":   rangeLabel,
+			"UptimeCharts": charts,
+			"RangeLabel":   rangeLabels["24h"],
 			"Range":        "24h",
 		},
 	})
