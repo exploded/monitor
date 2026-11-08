@@ -221,16 +221,33 @@ retention reduction the file stays its old size with the freed space on the free
 list. Reclaim it once, then leave it alone; at a fixed horizon the file
 plateaus by itself and a scheduled `VACUUM` buys nothing.
 
+Check first: free pages × page size is what a vacuum would give back. A
+`DROP COLUMN` rewrites the table in place and often frees little.
+
 ```bash
-sqlite3 /var/www/monitor/monitor.db "VACUUM INTO '/var/www/monitor/monitor-compact.db';"
-sudo systemctl stop monitor
-sudo -u www-data mv /var/www/monitor/monitor-compact.db /var/www/monitor/monitor.db
-sudo systemctl start monitor
+sqlite3 -cmd ".timeout 10000" "file:/var/www/monitor/monitor.db?mode=ro" \
+  "PRAGMA page_size; PRAGMA freelist_count;"
 ```
 
-`VACUUM INTO` runs under a read transaction, so it does not take the exclusive
-lock a plain `VACUUM` does and does not need 2× space in the same file. Downtime
-is just the swap.
+If it's worth it:
+
+```bash
+cd /var/www/monitor
+sudo systemctl stop monitor
+sudo -u www-data sqlite3 monitor.db "VACUUM INTO 'monitor-compact.db';"
+sudo -u www-data mv monitor.db monitor-old.db
+sudo -u www-data mv monitor-compact.db monitor.db
+sudo rm -f monitor.db-wal monitor.db-shm
+sudo systemctl start monitor
+# once it looks right:
+sudo rm monitor-old.db
+```
+
+Stop first, so nothing written during the copy is lost. Downtime is the length
+of the `VACUUM INTO`, seconds for a few hundred MB. Run it as `www-data`: that
+user owns the directory, and the file it creates must be theirs. The WAL files
+belong to the old database; sqlite3 has already folded them in, and leaving them
+beside the new one would replay them over it.
 
 ### GeoIP database
 
