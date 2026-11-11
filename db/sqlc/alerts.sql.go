@@ -278,6 +278,62 @@ func (q *Queries) ToggleAlertRule(ctx context.Context, id int64) error {
 	return err
 }
 
+const top5xxBetween = `-- name: Top5xxBetween :many
+SELECT host, status, COUNT(*) AS cnt, COUNT(DISTINCT uri) AS paths,
+       CAST(MIN(uri) AS TEXT) AS sample_uri
+FROM requests
+WHERE status >= 500 AND ts >= ?1 AND ts < ?2
+GROUP BY host, status
+ORDER BY cnt DESC, host
+LIMIT ?3
+`
+
+type Top5xxBetweenParams struct {
+	FromTs   time.Time `json:"from_ts"`
+	ToTs     time.Time `json:"to_ts"`
+	RowLimit int64     `json:"row_limit"`
+}
+
+type Top5xxBetweenRow struct {
+	Host      string `json:"host"`
+	Status    int64  `json:"status"`
+	Cnt       int64  `json:"cnt"`
+	Paths     int64  `json:"paths"`
+	SampleUri string `json:"sample_uri"`
+}
+
+// The requests behind a 5xx alert, one row per host and status, so the alert can
+// say which app failed. Callers pass a window of minutes to an hour, so the
+// idx_requests_ts range scan stays small. MIN(uri) is just a stable sample path.
+func (q *Queries) Top5xxBetween(ctx context.Context, arg Top5xxBetweenParams) ([]Top5xxBetweenRow, error) {
+	rows, err := q.db.QueryContext(ctx, top5xxBetween, arg.FromTs, arg.ToTs, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Top5xxBetweenRow
+	for rows.Next() {
+		var i Top5xxBetweenRow
+		if err := rows.Scan(
+			&i.Host,
+			&i.Status,
+			&i.Cnt,
+			&i.Paths,
+			&i.SampleUri,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateAlertRuleFired = `-- name: UpdateAlertRuleFired :exec
 UPDATE alert_rules SET last_fired_at = CURRENT_TIMESTAMP WHERE id = ?
 `

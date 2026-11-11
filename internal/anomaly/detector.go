@@ -90,8 +90,21 @@ func (d *Detector) check5xxAnomaly(ctx context.Context) {
 		d.record(ctx, "5xx_anomaly", "", "",
 			fmt.Sprintf("5xx rate %.1f%% at %s (baseline: %.1f%%, %d errors)",
 				latestRate*100, latest.Hour, mean*100, latest5xx),
+			func() string { return d.hourBreakdown(ctx, latest.Hour, latest5xx) },
 			score)
 	}
+}
+
+// hourBreakdown lists the hosts behind one hour's 5xx responses. It is the one
+// raw-row read here besides the current hour's, and only runs when an anomaly
+// is about to alert, so it is a single bounded range read at most hourly.
+func (d *Detector) hourBreakdown(ctx context.Context, hour string, total int64) string {
+	start, err := time.ParseInLocation(database.HourFormat, hour, time.UTC)
+	if err != nil {
+		slog.Error("anomaly parse hour", "hour", hour, "err", err)
+		return ""
+	}
+	return alerts.Breakdown5xx(ctx, d.q, start, start.Add(time.Hour), total)
 }
 
 // dedupWindow suppresses repeat anomalies for the same (type, ip, host). The
@@ -100,7 +113,10 @@ func (d *Detector) check5xxAnomaly(ctx context.Context) {
 // day across the table, almost all of them duplicates.
 const dedupWindow = time.Hour
 
-func (d *Detector) record(ctx context.Context, anomalyType, clientIP, host, description string, score float64) {
+// record stores an anomaly and alerts on it. detail, if non-nil, builds extra
+// lines for the alert only: the stored description stays one line for the
+// Anomalies panel, and the lookup is skipped when dedup drops the anomaly.
+func (d *Detector) record(ctx context.Context, anomalyType, clientIP, host, description string, detail func() string, score float64) {
 	seen, err := d.q.RecentAnomalyExists(ctx, db.RecentAnomalyExistsParams{
 		Type:     anomalyType,
 		ClientIp: clientIP,
@@ -128,9 +144,13 @@ func (d *Detector) record(ctx context.Context, anomalyType, clientIP, host, desc
 	slog.Info("anomaly detected", "type", anomalyType, "description", description)
 
 	if d.alertEngine != nil {
+		msg := description
+		if detail != nil {
+			msg += detail()
+		}
 		d.alertEngine.Notify(alerts.Event{
 			Type:    anomalyType,
-			Message: description,
+			Message: msg,
 		})
 	}
 }

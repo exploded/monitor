@@ -159,6 +159,9 @@ func (e *Engine) checkRules(ctx context.Context) {
 			}
 			details := formatDetails("count", count, "window_min", rule.WindowMinutes, "threshold", rule.Threshold)
 			msg := formatAlertTitle(rule.Type) + ": " + formatCount(count, rule.WindowMinutes, label)
+			if rule.Type == "5xx_spike" {
+				msg += Breakdown5xx(ctx, e.q, window, time.Now().UTC(), count)
+			}
 			e.fire(ctx, rule.ID, rule.Type, formatAlertTitle(rule.Type), msg, details, colorFor(rule.Type))
 		}
 	}

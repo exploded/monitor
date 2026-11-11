@@ -29,6 +29,18 @@ FROM alert_log ORDER BY id DESC LIMIT ?;
 -- name: Count5xxSince :one
 SELECT COUNT(*) FROM requests WHERE status >= 500 AND ts >= ?;
 
+-- name: Top5xxBetween :many
+-- The requests behind a 5xx alert, one row per host and status, so the alert can
+-- say which app failed. Callers pass a window of minutes to an hour, so the
+-- idx_requests_ts range scan stays small. MIN(uri) is just a stable sample path.
+SELECT host, status, COUNT(*) AS cnt, COUNT(DISTINCT uri) AS paths,
+       CAST(MIN(uri) AS TEXT) AS sample_uri
+FROM requests
+WHERE status >= 500 AND ts >= sqlc.arg(from_ts) AND ts < sqlc.arg(to_ts)
+GROUP BY host, status
+ORDER BY cnt DESC, host
+LIMIT sqlc.arg(row_limit);
+
 -- name: CountRequestsInWindow :one
 SELECT COUNT(*) FROM requests WHERE ts >= ?;
 

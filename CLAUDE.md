@@ -98,6 +98,7 @@ Discord webhook is the only transport. **If `DISCORD_WEBHOOK_URL` is unset, no a
 
 - Polled every 30s: `5xx_spike`, `traffic_surge` (count over a window vs threshold), and `app_error`.
 - Event-driven via `Notify`: `downtime` from the uptime checker, and `5xx_anomaly` from the anomaly detector.
+- `5xx_spike` and `5xx_anomaly` messages append a per-host breakdown (`alerts.Breakdown5xx`, query `Top5xxBetween`). Before that they carried only a count, and every alert meant digging through Caddy logs. The anomaly's stored description stays one line; only the alert message gets the breakdown.
 - `app_error` is per app: any ERROR from an app alerts on the next tick, with a per-app cooldown so one chatty app cannot spam you or mask another app's first error.
 - Cooldowns are keyed per subject (`downtime:<target-id>`, or the app name), not per rule, so two services failing in the same window produce two alerts.
 - Downtime needs `failuresBeforeAlert` consecutive failures (2), and every outage gets a matching green recovery notification.

@@ -660,3 +660,48 @@ func TestRollupSurvivesPrune(t *testing.T) {
 		t.Error("rollup row lost when raw rows were pruned")
 	}
 }
+
+// TestTop5xxBetween checks the 5xx alert breakdown query against a real
+// database: half-open window, 5xx only, grouped per host and status, busiest
+// first.
+func TestTop5xxBetween(t *testing.T) {
+	_, q := openTestDB(t)
+	ctx := context.Background()
+	from := time.Date(2026, 11, 11, 2, 0, 0, 0, time.UTC)
+	to := from.Add(time.Hour)
+
+	add := func(ts time.Time, host, uri string, status int64) {
+		t.Helper()
+		if err := q.InsertRequest(ctx, db.InsertRequestParams{
+			Ts: ts, Host: host, ClientIp: "1.2.3.4", Method: "GET", Uri: uri,
+			Status: status, Size: 1, UserAgent: "test", DurationMs: 1, Country: "AU",
+		}); err != nil {
+			t.Fatalf("InsertRequest: %v", err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		add(from.Add(time.Duration(i)*time.Minute), "a.example", "/", 502)
+	}
+	add(from.Add(10*time.Minute), "b.example", "/x", 500)
+	add(from.Add(11*time.Minute), "b.example", "/y", 500)
+	add(from.Add(12*time.Minute), "a.example", "/", 200) // not a 5xx
+	add(from.Add(-time.Second), "a.example", "/", 502)   // before the window
+	add(to, "a.example", "/", 502)                       // window is half-open
+
+	rows, err := q.Top5xxBetween(ctx, db.Top5xxBetweenParams{FromTs: from, ToTs: to, RowLimit: 5})
+	if err != nil {
+		t.Fatalf("Top5xxBetween: %v", err)
+	}
+	want := []db.Top5xxBetweenRow{
+		{Host: "a.example", Status: 502, Cnt: 3, Paths: 1, SampleUri: "/"},
+		{Host: "b.example", Status: 500, Cnt: 2, Paths: 2, SampleUri: "/x"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("got %d rows %+v, want %+v", len(rows), rows, want)
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Errorf("row %d: got %+v, want %+v", i, rows[i], want[i])
+		}
+	}
+}

@@ -14,7 +14,7 @@
     <tr>
       <td>{{formatDateTime .CreatedAt}}</td>
       <td><code>{{.Type}}</code></td>
-      <td>{{truncate .Message 80}}</td>
+      <td title="{{.Message}}">{{truncate .Message 80}}</td>
     </tr>
     {{end}}
   </tbody>

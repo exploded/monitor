@@ -182,6 +182,10 @@ What fires:
 | `traffic_surge` | Total requests over a window | 500 in 5 min |
 | `5xx_anomaly` | 5xx rate in the current hour well above the 24h baseline | 60 min cooldown |
 
+Both 5xx alerts list the hosts behind the errors, one line each, with status, count and
+a sample path (for example `iondrift.mchugh.au: 5 × 502 on /`), so you can see which app
+failed without opening the Caddy logs.
+
 Every outage also produces a green recovery notification when the target comes back.
 Cooldowns are per subject, not per rule, so two services failing together produce two
 alerts rather than one — and a noisy app cannot mask a quiet one's first error.
